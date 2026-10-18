@@ -8,7 +8,7 @@ const editing = () => { const a = document.activeElement; return !!(a && (a.clos
 Store.hooks({
   onChange: () => { if (editing()) dirty = true; else render(); },   // 正在打字时先不重画，失焦后再画
   onStatus: status,
-  onDirty: id => Sync.markDirty(id),
+  onDirty: id => { Sync.markDirty(id); syncInfo(); },
   onSaved: () => Sync.soon(2000),
 });
 
@@ -17,18 +17,25 @@ document.addEventListener("focusout", () => setTimeout(() => { if (dirty && !edi
 /* ---- 同步设置 ---- */
 let syncMsg = "";
 function syncInfo() {
-  const on = Sync.enabled(), t = Sync.lastOk;
-  const text = !on ? "未设置同步" : syncMsg || (t ? `已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}` : "同步中…");
-  const cls = !on ? "off" : syncKind === "err" ? "err" : syncKind === "warn" ? "warn" : syncKind === "off" ? "" : t ? "ok" : "";
+  const on = Sync.enabled(), t = Sync.lastOk, n = on ? Sync.pendingCount : 0;
+  // 有没上传的改动时绝不显示「已同步」
+  const wait = n ? `${n} 周待上传` : "";
+  const text = !on ? "未设置同步" : (syncMsg ? syncMsg + (wait && syncKind !== "warn" ? `（${wait}）` : "") : wait || (t ? `已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}` : "同步中…"));
+  const cls = !on ? "off" : syncKind === "err" ? "err" : syncKind === "warn" ? "warn" : syncKind === "off" || n ? "" : t ? "ok" : "";
   $("syncInfo").textContent = text; $("syncDot").className = "sync-dot " + cls;
   document.querySelectorAll("[data-sync]").forEach(b => {
     b.className = "sync-pill " + cls;
-    b.textContent = !on ? "未同步" : cls === "err" ? "同步出错" : cls === "warn" ? "有提醒" : cls === "ok" ? `已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}` : (syncMsg || "同步中…");
+    b.textContent = !on ? "未同步" : cls === "err" ? "同步出错" : cls === "warn" ? "有提醒" : cls === "ok" ? `已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}` : syncKind === "off" ? (n ? `离线 · ${wait}` : "离线中") : (wait || syncMsg || "同步中…");
     b.title = text;
   });
 }
-let syncKind = "";   // "" / "warn"（提醒，比如冲突副本）/ "err"（同步失败）/ "off"（离线）
-Sync.hooks({ onStatus: (t, kind = t ? "err" : "") => { syncMsg = t; syncKind = kind; syncInfo(); if (typeof renderE2EE === "function") renderE2EE(); } });
+let syncKind = "";   // "" / "warn"（提醒，比如同一条被两边改了）/ "err"（同步失败）/ "off"（离线）
+let unseenWarn = "";   // 提醒要一直留着，直到用户点开胶囊看过；否则下一轮同步成功就把它冲掉了
+Sync.hooks({ onStatus: (t, kind = t ? "err" : "") => {
+  if (kind === "warn") unseenWarn = unseenWarn && unseenWarn !== t ? unseenWarn + "；" + t : t;
+  else if (!kind && unseenWarn) { t = unseenWarn; kind = "warn"; }
+  syncMsg = t; syncKind = kind; syncInfo(); if (typeof renderE2EE === "function") renderE2EE();
+} });
 (() => {
   const c = Sync.cfg; $("syncServer").value = c.server; $("syncToken").value = c.token;
   $("serverRow").hidden = !Sync.needsServer && !c.server;
@@ -110,12 +117,16 @@ E2EE.ready.then(() => renderE2EE());
 document.querySelectorAll("[data-sync]").forEach(b => b.onclick = () => {
   if (view !== "week") { weekStart = monday(fromKey(selDay)); show("week"); }
   $("syncBox").open = true; $("syncBox").scrollIntoView({ behavior: "smooth", block: "center" });
+  unseenWarn = "";   // 面板里已经显示着这条提醒，看过了；下一轮同步成功后就不再保留
 });
 setInterval(syncInfo, 15000);
 window.addEventListener("online", () => Sync.soon(300));
 const wake = () => Sync.soon(300);
 window.addEventListener("focus", wake);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") wake(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") wake(); else leave(); });
+// 切到后台 / 关页面：先把 600ms 防抖里的字写进本机，再趁还活着推一次（安卓切后台后定时器可能被暂停）
+const leave = () => { Store.flush(); if (Sync.enabled() && Sync.pendingCount) Sync.run(); };
+window.addEventListener("pagehide", leave);
 
 /* ---- 离线可用（PWA） ---- */
 if (!IS_APP && "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {   // App 自带文件，不需要离线缓存

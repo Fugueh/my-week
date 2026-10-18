@@ -9,6 +9,7 @@ const Store = (() => {
   const cache = new Map();          // "2026-W42" -> week object
   const seen = new Map();           // "2026-W42" -> 上次读写时文件的 lastModified
   const timers = new Map();
+  const queued = new Map();         // "2026-W42" -> { w, go }：还在 600ms 等待里的改动，flush() 用
   let dir = null;
   let onChange = () => {}, onStatus = () => {}, onDirty = () => {}, onSaved = () => {};
 
@@ -43,7 +44,7 @@ const Store = (() => {
     onDirty(w.week);
     clearTimeout(timers.get(w.week));
     const go = async () => {
-      timers.delete(w.week);
+      timers.delete(w.week); queued.delete(w.week);
       if (dir && !isEmpty(w)) {
         try {
           const name = w.week + ".md";
@@ -61,7 +62,12 @@ const Store = (() => {
       writeLocal(w); onSaved(w.week);
     };
     if (now) return go();
-    timers.set(w.week, setTimeout(go, 600));
+    timers.set(w.week, setTimeout(go, 600)); queued.set(w.week, { w, go });
+  }
+  // 页面要被关掉或切到后台时调用：把还在等待的改动立刻写进本机存储。
+  // localStorage 是同步写的，这一步一定能完成；写文件夹是异步的，来不来得及看运气。
+  function flush() {
+    for (const [id, { w, go }] of [...queued]) { clearTimeout(timers.get(id)); writeLocal(w); go(); }
   }
 
   // 合并一份外来的周（导入）：updated 更新的那份胜出
@@ -199,7 +205,7 @@ const Store = (() => {
   }
 
   return {
-    get, forDay, save, linkDir, restoreDir, regrant, refresh, exportWeek, importFiles, canLinkDir,
+    get, forDay, save, flush, linkDir, restoreDir, regrant, refresh, exportWeek, importFiles, canLinkDir,
     get dirName() { return dir ? dir.name : null; },
     hooks(h) {
       onChange = h.onChange || onChange; onStatus = h.onStatus || onStatus;

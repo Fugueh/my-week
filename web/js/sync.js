@@ -4,7 +4,8 @@
 //   - 本地没改、服务器版本变了 → 拉下来
 //   - 本地改过 → 带着 base 推上去；服务器发现 base 已经过时就回 409，
 //     这时把「上次对齐的那份（baseText）、本地、服务器」按条目三方合并（merge.js），再推上去。
-//     两边加的条目都留下；同一条被两边改成不同的字时，后推送的这一边为准。
+//     两边加的条目都留下；同一条被两边改成不同的字时，后推送的这一边为准，并在这边提示被替换的是哪几条。
+//     合并本身出错时不动本地内容，这一周报错、留着待推送，其他周照常同步。
 // 触发：每 30 秒、切回页面、恢复联网、本地保存后 2 秒。
 //
 // 端到端加密（crypto.js）：账号开了加密后，推上去的是密文，拉下来先解密；
@@ -15,7 +16,8 @@ const Sync = (() => {
   const load = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
   const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   let cfg = load(CFG) || { server: "", token: "" };
-  let running = false, again = false, timer = null, lastOk = null, onStatus = () => {}, notice = "";
+  let running = false, again = false, timer = null, lastOk = null, onStatus = () => {}, notes = [];
+  const TIMEOUT = 15000;   // 弱网时请求可能一直挂着不返回，超过这么久就当作连不上
   let acct = { e2ee: false };   // 服务器上的账号设置，每轮同步刷新
 
   const meta = id => load(META + id) || { base: null, dirty: false };
@@ -25,13 +27,20 @@ const Sync = (() => {
   const enabled = () => !!cfg.token && base() !== null;
 
   async function api(path, opts = {}) {
-    const r = await fetch(base() + path, {
-      ...opts, cache: "no-store",
-      headers: { Authorization: "Bearer " + cfg.token, ...(opts.headers || {}) },
-    });
-    if (r.status === 401) throw new Error("令牌不对");
-    return r;
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    let t;
+    const late = new Promise((_, rej) => { t = setTimeout(() => { if (ctl) ctl.abort(); rej(new Error(`服务器 ${TIMEOUT / 1000} 秒没有响应`)); }, TIMEOUT); });
+    try {
+      const r = await Promise.race([fetch(base() + path, {
+        ...opts, cache: "no-store", signal: ctl ? ctl.signal : undefined,
+        headers: { Authorization: "Bearer " + cfg.token, ...(opts.headers || {}) },
+      }), late]);
+      if (r.status === 401) throw new Error("令牌不对");
+      return r;
+    } finally { clearTimeout(t); }
   }
+  // 只影响某一周、不该拖累其他周的错误：这一周留在本地等下轮，其他周照常同步
+  class WeekError extends Error {}
 
   function dirtyIds() {
     const out = [];
@@ -59,7 +68,7 @@ const Sync = (() => {
     const plain = E2EE.isEncrypted(blob);
     let w;
     try { w = MD.parse(plain ? await E2EE.decrypt(blob, id) : blob); }
-    catch (e) { notice = `服务器上的 ${id} 读不出来（${e.message}），这一周先跳过，其他照常同步`; return; }
+    catch (e) { notes.push(`服务器上的 ${id} 读不出来（${e.message}），这一周先跳过，其他照常同步`); return; }
     await Store.replace(w);
     setBaseText(id, plain ? await E2EE.decrypt(blob, id) : blob);
     // 账号开了加密，服务器上却还是明文（开启加密前留下的）：标成要推，下一步就会加密覆盖掉
@@ -88,7 +97,11 @@ const Sync = (() => {
       const bt = baseText(id);
       let merged;
       try { merged = Merge.weeks(bt ? MD.parse(bt) : null, MD.parse(text), MD.parse(srv)); }
-      catch (e) { merged = { week: MD.parse(srv), overwritten: [] }; }   // 合并不了就整份以服务器为准
+      catch (e) {   // 合并不了：本地内容原样保留、继续标着待推送，不能悄悄换成服务器的
+        throw new WeekError(`${id} 和服务器上的版本合并失败（${e.message}），本地内容已保留、没有上传，建议先导出这一周备份`);
+      }
+      // 同一条被两边改成不同的字：以这台为准，但要告诉用户另一台的版本被替换了（服务器历史里还留着）
+      if (merged.overwritten.length) notes.push(`${id} 有 ${merged.overwritten.length} 条在另一台设备上也改过，已按这台为准，另一台的版本被替换：${merged.overwritten.join("；")}`);
       const out = merged.week; out.updated = new Date().toISOString();
       await Store.replace(out);
       const same = sameContent(srv, MD.serialize(out)) && (E2EE.isEncrypted(blob) || !acct.e2ee);   // 合并后和服务器一样：不用再推
@@ -124,7 +137,7 @@ const Sync = (() => {
     if (base() === null) return { ok: false, error: "请填上同步服务器的地址（以 https:// 开头）" };
     if (running) { again = true; return { ok: true, busy: true }; }
     if (!navigator.onLine) { onStatus("离线中，联网后自动同步", "off"); return { ok: false, error: "现在没联网" }; }
-    running = true; clearTimeout(timer); tally = { pulled: 0, pushed: 0 };
+    running = true; clearTimeout(timer); tally = { pulled: 0, pushed: 0 }; notes = [];
     let result;
     try {
       const justEnabled = await checkAccount();
@@ -138,9 +151,15 @@ const Sync = (() => {
         if (!m.dirty && !Store.pending(id) && m.base !== ver) await pull(id);
       }
       // 刚开启加密：服务器上每一周都要换成密文
-      if (justEnabled) { for (const id of new Set([...remote.keys(), ...Store.localIds()])) markDirty(id); notice = "已开启端到端加密，服务器上的数据都换成了密文"; }
-      for (const id of dirtyIds()) if (!Store.pending(id)) await push(id);
-      lastOk = new Date(); result = { ok: true, ...tally, notice }; onStatus(notice, notice ? "warn" : ""); notice = "";
+      if (justEnabled) { for (const id of new Set([...remote.keys(), ...Store.localIds()])) markDirty(id); notes.push("已开启端到端加密，服务器上的数据都换成了密文"); }
+      const failed = [];
+      for (const id of dirtyIds()) {
+        if (Store.pending(id)) continue;
+        try { await push(id); } catch (e) { if (e instanceof WeekError) failed.push(e.message); else throw e; }
+      }
+      if (failed.length) throw new Error(failed.join("；"));
+      const notice = notes.join("；");
+      lastOk = new Date(); result = { ok: true, ...tally, notice }; onStatus(notice, notice ? "warn" : "");
     } catch (e) {
       const msg = e.message === "Failed to fetch" ? "连不上服务器" : e.message;
       result = { ok: false, error: msg, code: e.code }; onStatus("同步没成功：" + msg, "err");
@@ -156,6 +175,7 @@ const Sync = (() => {
     configure(c) { cfg = { server: (c.server || "").trim(), token: (c.token || "").trim() }; store(CFG, cfg); },
     enabled, markDirty, soon, run,
     get lastOk() { return lastOk; },
+    get pendingCount() { return dirtyIds().length; },   // 还没上传到服务器的周数
     get account() { return { ...acct }; },
 
     // 在新设备上输入恢复码。账号已开加密时，先确认指纹对得上再装入
