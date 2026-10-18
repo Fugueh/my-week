@@ -71,6 +71,25 @@
       <div class="sync-acts"><button type="submit">保存并同步</button><button type="button" id="syncNow">立即同步</button></div>
       <div class="sync-result" id="syncResult" role="status" aria-live="polite"></div>
     </form>
+    <div class="e2ee" id="e2eeBox" hidden>
+      <div class="e2ee-state" id="e2eeState"></div>
+      <button type="button" id="e2eeOn">开启端到端加密…</button>
+      <button type="button" id="e2eeShow" hidden>显示恢复码</button>
+      <div class="e2ee-panel" id="e2eeNew" hidden>
+        <p>开启后，日记在这台设备上加密好再上传，服务器只存密文，服务器主人也看不到。本地的文件还是明文，照常可以改。</p>
+        <p><b>这是你的恢复码。</b>在别的设备上输入它才能同步；所有设备都丢了、又没存恢复码的话，服务器上那份就再也解不开了。存进密码管理器，或者截图保存。</p>
+        <code class="e2ee-code" id="e2eeCode"></code>
+        <div class="sync-acts"><button type="button" id="e2eeCopy">复制</button></div>
+        <label class="e2ee-ok"><input type="checkbox" id="e2eeSaved"> 我已经把恢复码存好了</label>
+        <div class="sync-acts"><button type="button" id="e2eeConfirm" disabled>开启加密</button><button type="button" id="e2eeCancel">先不了</button></div>
+      </div>
+      <div class="e2ee-panel" id="e2eeEnter" hidden>
+        <p>这个账号开了端到端加密。输入恢复码（在已经同步的设备上点「显示恢复码」就能看到）：</p>
+        <input id="e2eeInput" placeholder="XXXX-XXXX-…" autocomplete="off" spellcheck="false">
+        <div class="sync-acts"><button type="button" id="e2eeUse">使用这个恢复码</button></div>
+      </div>
+      <div class="sync-result" id="e2eeMsg" role="status"></div>
+    </div>
   </details>
 
   <div class="store">
@@ -116,6 +135,7 @@
 
 <script src="js/dates.js"></script>
 <script src="js/markdown.js"></script>
+<script src="js/crypto.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/app.js"></script>

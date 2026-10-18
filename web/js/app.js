@@ -19,15 +19,16 @@ let syncMsg = "";
 function syncInfo() {
   const on = Sync.enabled(), t = Sync.lastOk;
   const text = !on ? "未设置同步" : syncMsg || (t ? `已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}` : "同步中…");
-  const cls = !on ? "off" : syncMsg && !/^离线/.test(syncMsg) ? "err" : syncMsg ? "" : t ? "ok" : "";
+  const cls = !on ? "off" : syncKind === "err" ? "err" : syncKind === "warn" ? "warn" : syncKind === "off" ? "" : t ? "ok" : "";
   $("syncInfo").textContent = text; $("syncDot").className = "sync-dot " + cls;
   document.querySelectorAll("[data-sync]").forEach(b => {
     b.className = "sync-pill " + cls;
-    b.textContent = !on ? "未同步" : cls === "err" ? "同步出错" : cls === "ok" ? `已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}` : (syncMsg || "同步中…");
+    b.textContent = !on ? "未同步" : cls === "err" ? "同步出错" : cls === "warn" ? "有提醒" : cls === "ok" ? `已同步 ${pad(t.getHours())}:${pad(t.getMinutes())}` : (syncMsg || "同步中…");
     b.title = text;
   });
 }
-Sync.hooks({ onStatus: t => { syncMsg = t; syncInfo(); } });
+let syncKind = "";   // "" / "warn"（提醒，比如冲突副本）/ "err"（同步失败）/ "off"（离线）
+Sync.hooks({ onStatus: (t, kind = t ? "err" : "") => { syncMsg = t; syncKind = kind; syncInfo(); if (typeof renderE2EE === "function") renderE2EE(); } });
 (() => {
   const c = Sync.cfg; $("syncServer").value = c.server; $("syncToken").value = c.token;
   $("serverRow").hidden = !Sync.needsServer && !c.server;
@@ -37,7 +38,7 @@ Sync.hooks({ onStatus: t => { syncMsg = t; syncInfo(); } });
 async function syncByHand() {
   const out = $("syncResult"); out.className = "sync-result busy"; out.textContent = "正在连接服务器…";
   syncMsg = ""; syncInfo();
-  const r = await Sync.run(); syncInfo();
+  const r = await Sync.run(); syncInfo(); renderE2EE(r && r.code);
   const t = new Date(), hm = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
   if (!r || r.busy) { out.className = "sync-result"; out.textContent = "正在同步，稍等几秒再看"; return; }
   if (r.ok) {
@@ -55,6 +56,57 @@ async function syncByHand() {
 const applyForm = () => Sync.configure({ server: $("syncServer").value, token: $("syncToken").value });
 $("syncForm").onsubmit = ev => { ev.preventDefault(); applyForm(); syncByHand(); };
 $("syncNow").onclick = () => { applyForm(); syncByHand(); };
+
+/* ---- 端到端加密 ---- */
+function renderE2EE(lastErr) {
+  const a = Sync.account, on = Sync.enabled();
+  $("e2eeBox").hidden = !on;
+  if (!on) return;
+  const needKey = lastErr === "need-key" || (a.e2ee && (!E2EE.enabled || E2EE.keyId !== a.keyId));
+  const locked = a.e2ee && E2EE.enabled && E2EE.keyId === a.keyId;
+  $("e2eeState").textContent = locked ? `已开启端到端加密（密钥指纹 ${E2EE.keyId}）：服务器上只有密文。`
+    : needKey ? "这个账号开了端到端加密，这台设备还没有密钥。"
+    : E2EE.enabled ? "正在开启端到端加密…" : "未加密：服务器上存的是明文。";
+  $("e2eeOn").hidden = locked || needKey || E2EE.enabled || !$("e2eeNew").hidden;
+  $("e2eeShow").hidden = !locked;
+  $("e2eeEnter").hidden = !needKey;
+}
+$("e2eeOn").onclick = async () => {
+  $("e2eeCode").textContent = await E2EE.newCode();
+  $("e2eeSaved").checked = false; $("e2eeConfirm").disabled = true;
+  $("e2eeNew").hidden = false; $("e2eeMsg").textContent = ""; renderE2EE();
+};
+$("e2eeSaved").onchange = () => { $("e2eeConfirm").disabled = !$("e2eeSaved").checked; };
+$("e2eeCopy").onclick = () => copyText($("e2eeCode").textContent, $("e2eeCopy"));
+$("e2eeCancel").onclick = () => { $("e2eeNew").hidden = true; $("e2eeCode").textContent = ""; renderE2EE(); };
+$("e2eeConfirm").onclick = async () => {
+  try {
+    await E2EE.useCode($("e2eeCode").textContent);
+    $("e2eeNew").hidden = true; $("e2eeCode").textContent = "";
+    await syncByHand();
+  } catch (e) { $("e2eeMsg").className = "sync-result err"; $("e2eeMsg").textContent = "✗ " + e.message; }
+};
+$("e2eeUse").onclick = async () => {
+  try {
+    await Sync.useRecoveryCode($("e2eeInput").value);
+    $("e2eeInput").value = ""; $("e2eeMsg").className = "sync-result ok"; $("e2eeMsg").textContent = "✓ 恢复码对上了";
+    await syncByHand();
+  } catch (e) { $("e2eeMsg").className = "sync-result err"; $("e2eeMsg").textContent = "✗ " + e.message; }
+};
+$("e2eeShow").onclick = async () => {
+  const shown = $("e2eeMsg").dataset.code === "1";
+  $("e2eeMsg").className = "sync-result"; $("e2eeMsg").dataset.code = shown ? "" : "1";
+  $("e2eeMsg").innerHTML = shown ? "" : "";
+  if (!shown) { const c = document.createElement("code"); c.className = "e2ee-code"; c.textContent = await E2EE.recoveryCode(); $("e2eeMsg").append("在新设备上输入这串恢复码：", c); }
+  $("e2eeShow").textContent = shown ? "显示恢复码" : "收起恢复码";
+};
+function copyText(t, btn) {
+  const done = () => { const o = btn.textContent; btn.textContent = "已复制"; setTimeout(() => btn.textContent = o, 1500); };
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(done, () => selectCode());
+  else selectCode();
+  function selectCode() { const r = document.createRange(); r.selectNodeContents($("e2eeCode")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+}
+E2EE.ready.then(() => renderE2EE());
 document.querySelectorAll("[data-sync]").forEach(b => b.onclick = () => {
   if (view !== "week") { weekStart = monday(fromKey(selDay)); show("week"); }
   $("syncBox").open = true; $("syncBox").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -147,7 +199,7 @@ function renderWeek() {
   const ex = $("extra"); if (document.activeElement !== ex) ex.value = w.extra || "";
   $("extraSec").hidden = !(w.extra || "").trim() && document.activeElement !== ex;
   $("extraSec").classList.toggle("conflict", /^## 冲突副本/m.test(w.extra || ""));
-  $("storeInfo").textContent = Store.dirName ? `数据文件夹：${Store.dirName}/` : "只存在这个浏览器里";
+  $("storeInfo").textContent = Store.dirName ? `数据文件夹：${Store.dirName}/` : IS_APP ? "只存在这个 App 里（卸载会清掉）" : "只存在这个浏览器里";
   $("linkDir").hidden = !Store.canLinkDir;
   if (Store.dirName) $("linkDir").textContent = "换一个文件夹";
 }
@@ -469,6 +521,7 @@ setInterval(() => { const t = dkey(new Date()); if (t !== lastToday && !document
   render();
   syncInfo(); Sync.soon(300);
   Store.restoreDir().then(r => {
+    if (r === "lost") status("之前选的文件夹没有权限了（可能被移动或删除），请重新「连接数据文件夹」");
     if (r === "prompt") { $("linkDir").textContent = "重新连接数据文件夹"; $("linkDir").dataset.regrant = 1; status("点“重新连接数据文件夹”继续写入文件"); }
   }).catch(() => {});
 })();

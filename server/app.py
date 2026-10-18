@@ -21,7 +21,7 @@
   PORT           默认 8000
   KEEP_HISTORY   每周保留多少份历史，默认 50
 """
-import hashlib, hmac, json, mimetypes, os, re, sys, time
+import hashlib, hmac, json, mimetypes, os, re, shutil, sys, time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -75,6 +75,14 @@ def keep_history(base: Path, wid: str, old: bytes):
         f.unlink()
 
 
+def read_meta(base: Path) -> dict:
+    """账号级的设置。目前只有端到端加密：{"e2ee": true, "keyId": "1a2b3c4d"}。"""
+    try:
+        return json.loads((base / ".meta.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {"e2ee": False}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "myweek/1"
 
@@ -126,6 +134,11 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/health":
             return self.send(200, {"ok": True})
+        if path == "/api/meta":
+            base = self.authed()
+            if not base:
+                return
+            return self.send(200, read_meta(base))
         if path == "/api/weeks":
             base = self.authed()
             if not base:
@@ -154,6 +167,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         path = urlparse(self.path).path
+        if path == "/api/meta":
+            return self.put_meta()
         m = re.match(r"^/api/weeks/([^/]+)$", path)
         if not m:
             return self.send(404, {"error": "没有这个地址"})
@@ -171,6 +186,9 @@ class Handler(BaseHTTPRequestHandler):
             body.decode("utf-8")
         except UnicodeDecodeError:
             return self.send(400, {"error": "不是 UTF-8 文本"})
+        if read_meta(base).get("e2ee") and not body.startswith(b"MYWEEK-E2EE/1 "):
+            # 开了加密的账号不收明文：防止一台还没装钥匙的设备把明文传上来
+            return self.send(422, {"error": "这个账号开了端到端加密，服务器不收明文"})
         if_match = self.headers.get("If-Match")  # 客户端是基于哪个版本改的；新建时不带
         with lock:
             f = week_path(base, wid)
@@ -180,12 +198,37 @@ class Handler(BaseHTTPRequestHandler):
                 # 服务器上的版本比客户端看到的新：交给客户端合并
                 return self.send(409, {"error": "conflict", "version": cur_v, "text": cur.decode("utf-8")})
             if cur is not None and cur != body:
-                keep_history(base, wid, cur)
+                # 开了加密以后，被覆盖的旧明文不进历史：服务器上一份明文都不留
+                if not (read_meta(base).get("e2ee") and not cur.startswith(b"MYWEEK-E2EE/1 ")):
+                    keep_history(base, wid, cur)
             if cur != body:
                 tmp = f.with_suffix(".md.tmp")
                 tmp.write_bytes(body)
                 os.replace(tmp, f)  # 原子替换，写到一半断电也不会坏文件
         return self.send(200, {"week": wid, "version": version(body)}, headers={"ETag": version(body)})
+
+    def put_meta(self):
+        base = self.authed()
+        if not base:
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            new = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
+        except ValueError:
+            return self.send(400, {"error": "不是 JSON"})
+        if not isinstance(new.get("e2ee"), bool) or (new["e2ee"] and not re.fullmatch(r"[0-9a-f]{8}", str(new.get("keyId", "")))):
+            return self.send(400, {"error": "格式应为 {\"e2ee\": true, \"keyId\": \"8 位十六进制\"}"})
+        with lock:
+            cur = read_meta(base)
+            if cur.get("e2ee") and new["e2ee"] and cur.get("keyId") != new["keyId"]:
+                # 已经用一把钥匙加密了，不能被另一把悄悄换掉
+                return self.send(409, {"error": "这个账号已经用另一把密钥加密了", **cur})
+            if new["e2ee"] and not cur.get("e2ee"):
+                # 开启加密：旧的明文历史版本全部删掉，服务器上不留明文
+                shutil.rmtree(base / ".history", ignore_errors=True)
+            meta = {"e2ee": new["e2ee"], **({"keyId": new["keyId"]} if new["e2ee"] else {})}
+            (base / ".meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        return self.send(200, meta)
 
     # ---------- 静态文件 ----------
     def static(self, path):

@@ -1,6 +1,8 @@
 // 按周存储，格式是 Markdown（见 markdown.js）。
 // 总是存进浏览器 localStorage（键 myweek:2026-W42，值是那周的 .md 全文）；
-// 连接了数据文件夹时，同时写成文件夹里的 2026-W42.md。
+// 连接了数据文件夹时，同时写成文件夹里的 2026-W42.md（明文，用任何编辑器都能改）。
+// 文件夹有两种实现，方法一样：电脑上的 Chrome / Edge 用 File System Access，
+// 安卓 App 用原生插件 FolderStore（系统的文件夹选择器，授权会一直保留）。
 // 你在编辑器里改过的文件，页面会在写入前发现并先读回来，不会覆盖。
 const Store = (() => {
   const PREFIX = "myweek:";
@@ -45,19 +47,14 @@ const Store = (() => {
       if (dir && !isEmpty(w)) {
         try {
           const name = w.week + ".md";
-          let fh = null;
-          try { fh = await dir.getFileHandle(name); } catch (e) {}
-          if (fh) {
-            const f = await fh.getFile();
-            if (seen.has(w.week) && f.lastModified > seen.get(w.week)) {
-              // 文件在外面被改过：以文件为准，丢弃这次页面上的改动
-              const fresh = MD.parse(await f.text());
-              cache.set(w.week, fresh); seen.set(w.week, f.lastModified); writeLocal(fresh);
-              onStatus(`${name} 在别处被改过，已重新读入（页面上刚才的改动没有写进去）`); onChange(); return;
-            }
-          } else fh = await dir.getFileHandle(name, { create: true });
-          const ws = await fh.createWritable(); await ws.write(MD.serialize(w)); await ws.close();
-          seen.set(w.week, (await fh.getFile()).lastModified);
+          const mtime = await dir.stat(name);
+          if (mtime != null && seen.has(w.week) && mtime > seen.get(w.week)) {
+            // 文件在外面被改过：以文件为准，丢弃这次页面上的改动
+            const f = await dir.read(name), fresh = MD.parse(f.text);
+            cache.set(w.week, fresh); seen.set(w.week, f.lastModified); writeLocal(fresh);
+            onStatus(`${name} 在别处被改过，已重新读入（页面上刚才的改动没有写进去）`); onChange(); return;
+          }
+          seen.set(w.week, await dir.write(name, MD.serialize(w)));
           onStatus("已存到 " + name);
         } catch (e) { onStatus("文件没写成：" + e.message); }
       }
@@ -74,8 +71,36 @@ const Store = (() => {
     return false;
   }
 
-  /* ---- 数据文件夹（Chrome / Edge 桌面版支持） ---- */
-  const canLinkDir = "showDirectoryPicker" in window;
+  /* ---- 数据文件夹 ---- */
+  const FolderPlugin = () => window.Capacitor.Plugins.FolderStore;
+  const hasAppFolder = IS_APP && !!(window.Capacitor.isPluginAvailable && window.Capacitor.isPluginAvailable("FolderStore"));
+  const canLinkDir = hasAppFolder || (!IS_APP && "showDirectoryPicker" in window);
+  // 两种后端，同一组方法：list() → [{name, lastModified}]，read(name) → {text, lastModified} 或 null，
+  // stat(name) → lastModified 或 null，write(name, text) → 写完后的 lastModified
+  function webFolder(h) {
+    const file = async name => { try { return await (await h.getFileHandle(name)).getFile(); } catch (e) { return null; } };
+    return {
+      name: h.name,
+      async list() { const out = []; for await (const [name, e] of h.entries()) if (e.kind === "file") out.push({ name, lastModified: (await e.getFile()).lastModified }); return out; },
+      async read(name) { const f = await file(name); return f ? { text: await f.text(), lastModified: f.lastModified } : null; },
+      async stat(name) { const f = await file(name); return f ? f.lastModified : null; },
+      async write(name, text) {
+        const fh = await h.getFileHandle(name, { create: true });
+        const ws = await fh.createWritable(); await ws.write(text); await ws.close();
+        return (await fh.getFile()).lastModified;
+      },
+    };
+  }
+  function appFolder({ uri, name }) {
+    const P = FolderPlugin();
+    return {
+      name,
+      list: async () => (await P.list({ uri })).files,
+      read: async n => { try { return await P.read({ uri, name: n }); } catch (e) { return null; } },
+      stat: async n => (await P.stat({ uri, name: n })).lastModified ?? null,
+      write: async (n, text) => (await P.write({ uri, name: n, text })).lastModified,
+    };
+  }
   function idb(mode, fn) {
     return new Promise((res, rej) => {
       const r = indexedDB.open("myweek", 1);
@@ -87,40 +112,54 @@ const Store = (() => {
   // 读文件夹里所有 2026-Wnn.md；文件夹里的版本优先
   async function readDir({ quiet = false } = {}) {
     let n = 0; const found = new Set();
-    for await (const [name, h] of dir.entries()) {
-      const m = name.match(/^(\d{4}-W\d{2})\.md$/); if (h.kind !== "file" || !m) continue;
+    for (const { name, lastModified } of await dir.list()) {
+      const m = name.match(/^(\d{4}-W\d{2})\.md$/); if (!m) continue;
       found.add(m[1]);
       if (timers.has(m[1])) continue;                       // 正在等着写入的周先不动
-      const f = await h.getFile();
-      if (seen.get(m[1]) === f.lastModified) continue;      // 没变过
+      if (seen.get(m[1]) === lastModified) continue;        // 没变过
       try {
-        const w = MD.parse(await f.text());
-        cache.set(w.week, w); seen.set(w.week, f.lastModified); writeLocal(w); n++;
+        const f = await dir.read(name), w = MD.parse(f.text);
+        const prev = cache.get(w.week) || readLocal(w.week);
+        const changed = !prev || MD.serialize(prev) !== MD.serialize(w);
+        cache.set(w.week, w); seen.set(w.week, f.lastModified); writeLocal(w);
+        if (changed) { n++; onDirty(w.week); onSaved(w.week); }   // 在编辑器里改过的，也要同步上去
       } catch (e) { onStatus(`${name} 读不懂：${e.message}`); }
     }
-    if (!quiet) {   // 浏览器里有、文件夹里没有的周，补写成文件
+    if (!quiet) {   // 本机存储里有、文件夹里没有的周，补写成文件
       loadAllLocal();
-      for (const w of cache.values()) if (!isEmpty(w) && !found.has(w.week)) save(w, { now: true });
+      for (const w of cache.values()) if (!isEmpty(w) && !found.has(w.week)) await save(w, { now: true });
     }
     return n;
   }
-  async function attach(h) { dir = h; const n = await readDir(); onChange(); return n; }
+  async function attach(folder) { dir = folder; const n = await readDir(); onChange(); return n; }
   async function linkDir() {
+    seen.clear();
+    if (hasAppFolder) {
+      const r = await FolderPlugin().pick();          // 系统的文件夹选择器
+      try { localStorage.setItem("myweek-folder", JSON.stringify(r)); } catch (e) {}
+      return attach(appFolder(r));
+    }
     const h = await window.showDirectoryPicker({ id: "myweek", mode: "readwrite" });
-    seen.clear(); try { await idb("readwrite", s => s.put(h, "dir")); } catch (e) {}
-    return attach(h);
+    try { await idb("readwrite", s => s.put(h, "dir")); } catch (e) {}
+    return attach(webFolder(h));
   }
   async function restoreDir() {
     if (!canLinkDir) return "unsupported";
+    if (hasAppFolder) {
+      let saved = null; try { saved = JSON.parse(localStorage.getItem("myweek-folder")); } catch (e) {}
+      if (!saved) return "none";
+      if ((await FolderPlugin().hasAccess({ uri: saved.uri })).ok) { await attach(appFolder(saved)); return "granted"; }
+      return "lost";                                  // 授权没了（比如文件夹被删了），要重新选
+    }
     let h = null; try { h = await idb("readonly", s => s.get("dir")); } catch (e) {}
     if (!h) return "none";
-    if (await h.queryPermission({ mode: "readwrite" }) === "granted") { await attach(h); return "granted"; }
+    if (await h.queryPermission({ mode: "readwrite" }) === "granted") { await attach(webFolder(h)); return "granted"; }
     restoreDir.pending = h; return "prompt";
   }
   async function regrant() {
     const h = restoreDir.pending; if (!h) return false;
     if (await h.requestPermission({ mode: "readwrite" }) !== "granted") return false;
-    await attach(h); return true;
+    await attach(webFolder(h)); return true;
   }
   // 切回这个页面时，把在编辑器里改过的文件读回来
   async function refresh() {
@@ -173,13 +212,7 @@ const Store = (() => {
     // 用服务器上的版本替换本地这一周（不改 updated，不算本地改动）
     async replace(w) {
       cache.set(w.week, w); writeLocal(w);
-      if (dir) {
-        try {
-          const fh = await dir.getFileHandle(w.week + ".md", { create: true });
-          const ws = await fh.createWritable(); await ws.write(MD.serialize(w)); await ws.close();
-          seen.set(w.week, (await fh.getFile()).lastModified);
-        } catch (e) {}
-      }
+      if (dir) { try { seen.set(w.week, await dir.write(w.week + ".md", MD.serialize(w))); } catch (e) {} }
       onChange();
     },
   };

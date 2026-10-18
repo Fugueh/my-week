@@ -214,3 +214,16 @@ header{position:relative}
 
 /* 手机刘海和底部手势条：页面内容避开 */
 .wrap{padding-top:calc(20px + env(safe-area-inset-top, 0px));padding-bottom:calc(72px + env(safe-area-inset-bottom, 0px))}
+
+/* 端到端加密 */
+.e2ee{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-width:420px;font-size:13px}
+.e2ee > button{align-self:flex-start;border:1.5px solid var(--line);font-size:13px}
+.e2ee-state{color:var(--muted)}
+.e2ee-panel{display:flex;flex-direction:column;gap:8px;border:1.5px solid var(--line);border-radius:8px;padding:12px;background:var(--surface)}
+.e2ee-panel p{margin:0;line-height:1.6}
+.e2ee-code{display:block;font-family:var(--f-mono);font-size:13px;letter-spacing:.04em;word-break:break-all;background:var(--accent-soft);color:var(--ink);padding:8px 10px;border-radius:6px;user-select:all}
+.e2ee-ok{display:flex;align-items:center;gap:6px}
+.e2ee-panel input[type=text],.e2ee-panel #e2eeInput{font:inherit;font-family:var(--f-mono);color:var(--ink);background:var(--paper);border:1.5px solid var(--line);border-radius:6px;padding:6px 8px}
+.e2ee-panel button:disabled{opacity:.45;cursor:not-allowed}
+.sync-pill.warn{color:#b7791f;border-color:#d69e2e}.sync-pill.warn::before{background:#d69e2e}
+.sync-dot.warn{background:#d69e2e}
