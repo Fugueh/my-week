@@ -130,8 +130,33 @@ const leave = () => { Store.flush(); if (Sync.enabled() && Sync.pendingCount) Sy
 window.addEventListener("pagehide", leave);
 
 /* ---- 离线可用（PWA） ---- */
+// 新版本由 sw.js 在后台整包装好后先等着，不和正在用的旧版本混。刚打开或切回前台时，只要没在打字、没有防抖中的保存，
+// 就直接切过去并刷新；否则在页面底部提示「有新版本，点这里刷新」。
 if (!IS_APP && "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {   // App 自带文件，不需要离线缓存
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  const sw = navigator.serviceWorker;
+  let reg = null, switching = false, lastCheck = Date.now();
+  const typing = () => { const a = document.activeElement; return !!a && (a.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(a.tagName) && !!a.value)); };
+  const apply = async () => {
+    if (!reg || !reg.waiting || switching) return;
+    switching = true; $("updBtn").hidden = true;
+    try { await Store.flush(); } catch (e) {}
+    reg.waiting.postMessage("skip");   // 新 SW 激活后 controllerchange → 刷新
+  };
+  const ready = auto => {
+    if (!reg || !reg.waiting || !sw.controller) return;   // 第一次安装没有旧版本，不用切
+    if (auto && !Store.queuedCount && !typing()) apply(); else $("updBtn").hidden = false;
+  };
+  $("updBtn").onclick = apply;
+  sw.addEventListener("controllerchange", () => { if (switching) location.reload(); });
+  sw.register("sw.js").then(r => {
+    reg = r; ready(true);
+    r.addEventListener("updatefound", () => { const n = r.installing; n && n.addEventListener("statechange", () => { if (n.state === "installed") ready(false); }); });
+  }).catch(() => {});
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !reg) return;
+    ready(true);
+    if (Date.now() - lastCheck > 10 * 60e3) { lastCheck = Date.now(); reg.update().catch(() => {}); }   // 一直开着的页面也能发现新版本
+  });
 }
 
 /* ---- 视图切换 ---- */

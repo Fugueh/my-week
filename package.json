@@ -7,7 +7,8 @@
   "scripts": {
     "sync": "cap sync android",
     "open": "cap open android",
-    "test": "node tests/merge.test.js && node tests/sync.test.js"
+    "test": "node tests/merge.test.js && node tests/sync.test.js && node tests/sw-version.test.js",
+    "bump-sw": "node tests/sw-version.test.js --fix"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

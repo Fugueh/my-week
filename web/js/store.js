@@ -70,7 +70,7 @@ const Store = (() => {
   // 页面要被关掉或切到后台时调用：把还在等待的改动立刻写进本机存储。
   // localStorage 是同步写的，这一步一定能完成；写文件夹是异步的，来不来得及看运气。
   function flush() {
-    for (const [id, { w, go }] of [...queued]) { clearTimeout(timers.get(id)); keepEdit(id); writeLocal(w); go(true); }
+    return Promise.all([...queued].map(([id, { w, go }]) => { clearTimeout(timers.get(id)); keepEdit(id); writeLocal(w); return go(true); }));
   }
   // 自己编辑：把这次写入之前本机存着的那份交给快照（快照那边限制每 10 分钟最多一份）
   function keepEdit(id) {
@@ -228,6 +228,7 @@ const Store = (() => {
   return {
     get, forDay, save, flush, restore, linkDir, restoreDir, regrant, refresh, exportWeek, importFiles, canLinkDir,
     get dirName() { return dir ? dir.name : null; },
+    get queuedCount() { return queued.size; },   // 还在防抖里没写进本机的周数
     hooks(h) {
       onChange = h.onChange || onChange; onStatus = h.onStatus || onStatus;
       onDirty = h.onDirty || onDirty; onSaved = h.onSaved || onSaved;

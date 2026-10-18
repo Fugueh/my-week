@@ -95,6 +95,10 @@ textarea:focus{border-color:var(--accent);outline:none}
 select{font:inherit;color:var(--ink);background:transparent;border:0;border-bottom:1.5px solid var(--line);padding:6px 2px}
 .empty{color:var(--muted);font-size:14px;padding:4px 0}
 .status{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:right}
+/* 新版本提示：固定在底部，点一下切到新版本 */
+.upd{position:fixed;left:50%;bottom:max(16px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:20;max-width:calc(100% - 32px);
+  background:var(--accent);color:var(--surface);padding:8px 16px;border-radius:999px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.upd:hover{background:var(--accent);filter:brightness(1.08)}
 body{margin:0}
 .store{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center;font-size:12px;color:var(--muted)}
 .store button{font-size:12px;border:1.5px solid var(--line)}
