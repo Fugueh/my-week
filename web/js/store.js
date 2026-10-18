@@ -4,6 +4,7 @@
 // 文件夹有两种实现，方法一样：电脑上的 Chrome / Edge 用 File System Access，
 // 安卓 App 用原生插件 FolderStore（系统的文件夹选择器，授权会一直保留）。
 // 你在编辑器里改过的文件，页面会在写入前发现并先读回来，不会覆盖。
+// 本机内容每次被别的东西换掉之前，先交给 Snap（history.js）存一份快照，「历史版本」里能恢复。
 const Store = (() => {
   const PREFIX = "myweek:";
   const cache = new Map();          // "2026-W42" -> week object
@@ -43,7 +44,7 @@ const Store = (() => {
     w.updated = new Date().toISOString();
     onDirty(w.week);
     clearTimeout(timers.get(w.week));
-    const go = async () => {
+    const go = async (flushed = false) => {
       timers.delete(w.week); queued.delete(w.week);
       if (dir && !isEmpty(w)) {
         try {
@@ -52,6 +53,7 @@ const Store = (() => {
           if (mtime != null && seen.has(w.week) && mtime > seen.get(w.week)) {
             // 文件在外面被改过：以文件为准，丢弃这次页面上的改动
             const f = await dir.read(name), fresh = MD.parse(f.text);
+            Snap.keep(w.week, MD.serialize(w), "folder");      // 页面上没写进去的那份留个快照
             cache.set(w.week, fresh); seen.set(w.week, f.lastModified); writeLocal(fresh);
             onStatus(`${name} 在别处被改过，已重新读入（页面上刚才的改动没有写进去）`); onChange(); return;
           }
@@ -59,6 +61,7 @@ const Store = (() => {
           onStatus("已存到 " + name);
         } catch (e) { onStatus("文件没写成：" + e.message); }
       }
+      if (!flushed) keepEdit(w.week);
       writeLocal(w); onSaved(w.week);
     };
     if (now) return go();
@@ -67,13 +70,30 @@ const Store = (() => {
   // 页面要被关掉或切到后台时调用：把还在等待的改动立刻写进本机存储。
   // localStorage 是同步写的，这一步一定能完成；写文件夹是异步的，来不来得及看运气。
   function flush() {
-    for (const [id, { w, go }] of [...queued]) { clearTimeout(timers.get(id)); writeLocal(w); go(); }
+    for (const [id, { w, go }] of [...queued]) { clearTimeout(timers.get(id)); keepEdit(id); writeLocal(w); go(true); }
+  }
+  // 自己编辑：把这次写入之前本机存着的那份交给快照（快照那边限制每 10 分钟最多一份）
+  function keepEdit(id) {
+    let prev = null; try { prev = localStorage.getItem(PREFIX + id); } catch (e) {}
+    if (prev) Snap.keep(id, prev, "edit");
+  }
+
+  // 把某一周恢复成一份历史快照：当作一次本地编辑，会同步到其他设备。现在的内容先存成快照
+  async function restore(id, text) {
+    const cur = cache.get(id) || readLocal(id);
+    if (cur && !isEmpty(cur)) await Snap.keep(id, MD.serialize(cur), "restore");
+    const w = MD.parse(text);
+    cache.set(id, w); await save(w, { now: true }); onChange();
+    return w;
   }
 
   // 合并一份外来的周（导入）：updated 更新的那份胜出
   function merge(w) {
     const cur = get(w.start);
-    if (isEmpty(cur) || !cur.updated || (w.updated && w.updated > cur.updated)) { cache.set(w.week, w); writeLocal(w); return true; }
+    if (isEmpty(cur) || !cur.updated || (w.updated && w.updated > cur.updated)) {
+      if (!isEmpty(cur)) Snap.keep(w.week, MD.serialize(cur), "import");
+      cache.set(w.week, w); writeLocal(w); return true;
+    }
     return false;
   }
 
@@ -127,6 +147,7 @@ const Store = (() => {
         const f = await dir.read(name), w = MD.parse(f.text);
         const prev = cache.get(w.week) || readLocal(w.week);
         const changed = !prev || MD.serialize(prev) !== MD.serialize(w);
+        if (changed && prev && !isEmpty(prev)) Snap.keep(w.week, MD.serialize(prev), "folder");
         cache.set(w.week, w); seen.set(w.week, f.lastModified); writeLocal(w);
         if (changed) { n++; onDirty(w.week); onSaved(w.week); }   // 在编辑器里改过的，也要同步上去
       } catch (e) { onStatus(`${name} 读不懂：${e.message}`); }
@@ -205,7 +226,7 @@ const Store = (() => {
   }
 
   return {
-    get, forDay, save, flush, linkDir, restoreDir, regrant, refresh, exportWeek, importFiles, canLinkDir,
+    get, forDay, save, flush, restore, linkDir, restoreDir, regrant, refresh, exportWeek, importFiles, canLinkDir,
     get dirName() { return dir ? dir.name : null; },
     hooks(h) {
       onChange = h.onChange || onChange; onStatus = h.onStatus || onStatus;
@@ -215,8 +236,10 @@ const Store = (() => {
     pending: id => timers.has(id),
     byId: id => { if (!cache.has(id)) { const w = readLocal(id); if (w) cache.set(id, w); } return cache.get(id) || null; },
     localIds() { loadAllLocal(); return [...cache.values()].filter(w => !isEmpty(w)).map(w => w.week); },
-    // 用服务器上的版本替换本地这一周（不改 updated，不算本地改动）
-    async replace(w) {
+    // 用服务器上的版本（或合并结果）替换本地这一周（不改 updated，不算本地改动）。换掉之前先留快照
+    async replace(w, reason = "pull") {
+      const cur = cache.get(w.week) || readLocal(w.week);
+      if (cur && !isEmpty(cur)) Snap.keep(w.week, MD.serialize(cur), reason);
       cache.set(w.week, w); writeLocal(w);
       if (dir) { try { seen.set(w.week, await dir.write(w.week + ".md", MD.serialize(w))); } catch (e) {} }
       onChange();

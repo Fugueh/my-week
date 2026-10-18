@@ -147,7 +147,8 @@ body{margin:0}
 
 /* 同步设置 */
 .sync{font-size:13px;color:var(--muted);border-top:1.5px dashed var(--line);padding-top:10px}
-.sync summary{cursor:pointer;display:flex;align-items:center;gap:8px;list-style:none;width:max-content}
+.sync summary{cursor:pointer;display:flex;align-items:baseline;gap:8px;list-style:none;width:fit-content;max-width:100%}
+.sync summary .sync-dot{flex:none;align-self:center}
 .sync summary::-webkit-details-marker{display:none}
 .sync-dot{width:8px;height:8px;border-radius:50%;background:var(--line)}
 .sync-dot.ok{background:#3aa66a}.sync-dot.err{background:#d64545}.sync-dot.off{background:transparent;border:1.5px solid var(--muted)}
@@ -227,3 +228,28 @@ header{position:relative}
 .e2ee-panel button:disabled{opacity:.45;cursor:not-allowed}
 .sync-pill.warn{color:#b7791f;border-color:#d69e2e}.sync-pill.warn::before{background:#d69e2e}
 .sync-dot.warn{background:#d69e2e}
+
+/* 同步记录 */
+.sync-log{margin-top:12px;max-width:420px}
+.sync-log summary{width:auto;font-size:13px}
+.log-list{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto;font-size:12px}
+.log-list li{display:flex;gap:8px;line-height:1.5}
+.log-list time{font-family:var(--f-mono);flex:none;color:var(--muted)}
+.log-list .k-error{color:#d64545}.log-list .k-merge,.log-list .k-warn{color:#b7791f}
+.log-list .empty{color:var(--muted)}
+
+/* 历史版本 */
+.hist{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);padding:16px;font-size:13px}
+.hist::backdrop{background:rgba(0,0,0,.35)}
+.hist-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hist-head b{font-size:15px}
+.hist .hint{margin:6px 0 10px}
+.hist-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.hist-list button{width:100%;text-align:left;display:flex;flex-wrap:wrap;gap:4px 10px;border:1.5px solid var(--line);padding:6px 10px}
+.hist-list time{font-family:var(--f-mono)}
+.hist-list .why{color:var(--muted)}
+.hist-list .diff{margin-left:auto;font-family:var(--f-mono);color:var(--muted)}
+.hist-list .empty{color:var(--muted)}
+.hist-view{display:flex;flex-direction:column;gap:8px}
+.hist-meta{color:var(--muted)}
+.hist-text{margin:0;max-height:50vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--f-mono);font-size:12px;background:var(--paper);border:1.5px solid var(--line);border-radius:6px;padding:8px 10px}

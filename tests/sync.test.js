@@ -34,7 +34,7 @@ function device(srv, name, { setTimeout: st = () => 0, fetch: f } = {}) {
     navigator: { onLine: true }, location: { protocol: "https:" }, fetch: f || ((u, o) => srv.fetch(u, o)),
     crypto: nodeCrypto.webcrypto, TextEncoder, TextDecoder, btoa, atob, setTimeout: st, clearTimeout() {}, addEventListener() {},
   });
-  for (const f of ["dates.js", "markdown.js", "merge.js", "crypto.js", "store.js", "sync.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8"), ctx, { filename: f });
+  for (const f of ["dates.js", "markdown.js", "merge.js", "crypto.js", "history.js", "store.js", "sync.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8"), ctx, { filename: f });
   const run = c => vm.runInContext(c, ctx);
   run('Sync.configure({ server: "https://srv", token: "t" })');
   return {
@@ -174,6 +174,91 @@ const t = async (name, fn) => { await fn(); n++; console.log("ok  " + name); };
     a.run("Store.flush()");
     assert.ok((a.ls.get("myweek:2026-W42") || "").includes("刚打的字"));
     assert.strictEqual(a.run('Store.pending("2026-W42")'), false);
+  });
+
+  /* ---- 本地快照 ---- */
+  const snaps = async d => { await d.run('Snap.flushed("2026-W42")'); return JSON.parse(JSON.stringify(await d.run('Snap.list("2026-W42")'))); };
+
+  await t("快照：拉取服务器的版本之前，本机原来那份先存下来", async () => {
+    const s = server(); s.files.set("2026-W42", MD0);
+    const a = device(s, "手机"), b = device(s, "电脑");
+    await a.sync(); await b.sync();
+    b.edit(w => { w.events = w.events.filter(e => e.text !== "乙"); });
+    await b.sync();
+    await a.sync();                                   // 手机拉下来：乙没了
+    assert.deepStrictEqual(a.items(), ["甲"]);
+    const l = await snaps(a);
+    assert.strictEqual(l.length, 1);
+    assert.strictEqual(l[0].reason, "pull");
+    assert.ok(l[0].text.includes("- 乙"), "快照里应该还有乙");
+  });
+
+  await t("快照：同一条被两边改，服务器上被替换的那一版存成快照，同步记录里写明被替换的条目", async () => {
+    const s = server(); s.files.set("2026-W42", MD0);
+    const a = device(s, "手机"), b = device(s, "电脑");
+    await a.sync(); await b.sync();
+    a.edit(w => { w.events.find(e => e.text === "乙").text = "乙·手机"; });
+    b.edit(w => { w.events.find(e => e.text === "乙").text = "乙·电脑"; });
+    await a.sync(); await b.sync();
+    const l = await snaps(b);
+    const srv = l.find(x => x.reason === "server");
+    assert.ok(srv && srv.text.includes("乙·手机"), "手机的版本应该能在电脑的历史版本里找到");
+    assert.ok(l.some(x => x.reason === "merge" && x.text.includes("乙·电脑")), "合并之前本机那份也要存");
+    const log = b.run("JSON.stringify(Sync.log)");
+    assert.ok(JSON.parse(log).some(x => x.kind === "merge" && x.text.includes("乙·手机")), log);
+  });
+
+  await t("恢复旧版：内容换回去、算本地改动、同步到服务器；恢复前的内容也留了快照", async () => {
+    const s = server(); s.files.set("2026-W42", MD0);
+    const a = device(s, "手机"), b = device(s, "电脑");
+    await a.sync(); await b.sync();
+    b.edit(w => { w.events = w.events.filter(e => e.text !== "乙"); });   // 电脑误删了乙
+    await b.sync(); await a.sync();
+    assert.deepStrictEqual(a.items(), ["甲"]);
+    const old = (await snaps(a)).find(x => x.reason === "pull");
+    await a.run(`Store.restore("2026-W42", ${JSON.stringify(old.text)})`); a.run('Sync.markDirty("2026-W42")');
+    assert.deepStrictEqual(a.items().slice().sort(), ["乙", "甲"].sort());
+    assert.strictEqual(a.run("Sync.pendingCount"), 1);
+    await a.sync(); await b.sync();
+    assert.deepStrictEqual(b.items().slice().sort(), ["乙", "甲"].sort(), "恢复的内容应该同步到另一台");
+    const before = (await snaps(a)).find(x => x.reason === "restore");
+    assert.ok(before && !before.text.includes("- 乙"), "恢复之前那份（只有甲）也要存，万一恢复错了还能回来");
+  });
+
+  await t("快照：自己编辑每 10 分钟最多一份；和上一份一样的不重复存；每周最多 30 份", async () => {
+    const a = device(server(), "手机");
+    let now = 1_800_000_000_000; a.run(`Date.now = () => globalThis.__now`); a.run(`globalThis.__now = ${now}`);
+    const add = txt => a.run(`(() => { const w = Store.get("2026-10-12"); w.goals.push({ text: ${JSON.stringify(txt)}, done: false }); return Store.save(w, { now: true }); })()`);
+    await add("一"); await add("二"); await add("三");  // 第一次写入前本机是空的，不存；之后 10 分钟内只存一份
+    let l = await snaps(a);
+    assert.strictEqual(l.length, 1, JSON.stringify(l.map(x => x.text)));
+    a.run(`globalThis.__now = ${now += 11 * 60 * 1000}`);
+    await add("四");
+    l = await snaps(a);
+    assert.strictEqual(l.length, 2);
+    assert.ok(l[0].text.includes("三") && !l[0].text.includes("四"), "存的是这次编辑之前的样子");
+    for (let i = 0; i < 40; i++) { a.run(`globalThis.__now = ${now += 11 * 60 * 1000}`); await add("多" + i); }
+    assert.strictEqual((await snaps(a)).length, 30);
+  });
+
+  /* ---- 同步记录 ---- */
+  await t("同步记录：上传、下载各记一条；什么都没发生的轮次不记；同样的错误连着出现只记一条带次数", async () => {
+    const s = server(); s.files.set("2026-W42", MD0);
+    let down = false;
+    const a = device(s, "手机", { fetch: (u, o) => down ? Promise.reject(new Error("Failed to fetch")) : s.fetch(u, o) });
+    await a.sync();
+    a.edit(w => w.events.push({ id: "x1", wd: 6, text: "新的" }));
+    await a.sync(); await a.sync(); await a.sync();
+    let log = JSON.parse(a.run("JSON.stringify(Sync.log)"));
+    assert.deepStrictEqual(log.map(x => x.kind), ["push", "pull"], JSON.stringify(log));
+    down = true; await a.sync(); await a.sync(); await a.sync();
+    log = JSON.parse(a.run("JSON.stringify(Sync.log)"));
+    assert.strictEqual(log[0].kind, "error");
+    assert.strictEqual(log[0].n, 3);
+    assert.ok(log[0].text.includes("连不上服务器"));
+    assert.strictEqual(log.length, 3);
+    a.run("Sync.clearLog()");
+    assert.strictEqual(JSON.parse(a.run("JSON.stringify(Sync.log)")).length, 0);
   });
 
   console.log(`\n${n} 项通过`);

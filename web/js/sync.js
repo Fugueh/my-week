@@ -42,6 +42,16 @@ const Sync = (() => {
   // 只影响某一周、不该拖累其他周的错误：这一周留在本地等下轮，其他周照常同步
   class WeekError extends Error {}
 
+  // 同步记录（参照 Obsidian 的同步日志）：每一轮里真正发生的事——上传、下载、合并、替换、出错——存在本机，
+  // 面板里能翻看。最多留 200 条；同样的错误连着出现只记一条，带次数。
+  const LOG = "myweek-sync-log", LOG_MAX = 200;
+  function log(kind, text, week) {
+    const l = load(LOG) || [], last = l[l.length - 1], at = Date.now();
+    if (last && last.kind === kind && last.text === text) { last.n = (last.n || 1) + 1; last.at = at; }
+    else l.push({ at, kind, week, text });
+    store(LOG, l.slice(-LOG_MAX));
+  }
+
   function dirtyIds() {
     const out = [];
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith(META) && meta(k.slice(META.length)).dirty) out.push(k.slice(META.length)); } } catch (e) {}
@@ -68,11 +78,12 @@ const Sync = (() => {
     const plain = E2EE.isEncrypted(blob);
     let w;
     try { w = MD.parse(plain ? await E2EE.decrypt(blob, id) : blob); }
-    catch (e) { notes.push(`服务器上的 ${id} 读不出来（${e.message}），这一周先跳过，其他照常同步`); return; }
-    await Store.replace(w);
+    catch (e) { const t = `服务器上的 ${id} 读不出来（${e.message}），这一周先跳过，其他照常同步`; notes.push(t); log("warn", t, id); return; }
+    await Store.replace(w, "pull");
     setBaseText(id, plain ? await E2EE.decrypt(blob, id) : blob);
     // 账号开了加密，服务器上却还是明文（开启加密前留下的）：标成要推，下一步就会加密覆盖掉
     setMeta(id, { base: ver, dirty: acct.e2ee && !plain }); tally.pulled++;
+    log("pull", `下载了 ${id}`, id);
   }
 
   async function push(id, attempt = 0) {
@@ -87,7 +98,7 @@ const Sync = (() => {
       // 推的过程中又改了的话，保持 dirty，下轮再推
       setMeta(id, { base: version, dirty: Store.pending(id) || MD.serialize(Store.byId(id) || w) !== text });
       setBaseText(id, text);
-      tally.pushed++; return;
+      tally.pushed++; log("push", `上传了 ${id}`, id); return;
     }
     if (r.status === 409 && attempt < 2) {
       const { version, text: blob } = await r.json();
@@ -98,12 +109,17 @@ const Sync = (() => {
       let merged;
       try { merged = Merge.weeks(bt ? MD.parse(bt) : null, MD.parse(text), MD.parse(srv)); }
       catch (e) {   // 合并不了：本地内容原样保留、继续标着待推送，不能悄悄换成服务器的
-        throw new WeekError(`${id} 和服务器上的版本合并失败（${e.message}），本地内容已保留、没有上传，建议先导出这一周备份`);
+        const t = `${id} 和服务器上的版本合并失败（${e.message}），本地内容已保留、没有上传，建议先导出这一周备份`;
+        log("error", t, id); throw new WeekError(t);
       }
-      // 同一条被两边改成不同的字：以这台为准，但要告诉用户另一台的版本被替换了（服务器历史里还留着）
-      if (merged.overwritten.length) notes.push(`${id} 有 ${merged.overwritten.length} 条在另一台设备上也改过，已按这台为准，另一台的版本被替换：${merged.overwritten.join("；")}`);
+      // 同一条被两边改成不同的字：以这台为准，但要告诉用户另一台的版本被替换了，并把服务器上那一版存成快照
+      if (merged.overwritten.length) {
+        Snap.keep(id, srv, "server");
+        notes.push(`${id} 有 ${merged.overwritten.length} 条在另一台设备上也改过，已按这台为准，另一台的版本被替换：${merged.overwritten.join("；")}（那一版存在本周的「历史版本」里）`);
+        log("merge", `${id} 两台设备都改过，已合并；同一条两边都改了的，按这台为准，被替换的：${merged.overwritten.join("；")}`, id);
+      } else log("merge", `${id} 两台设备都改过，已合并`, id);
       const out = merged.week; out.updated = new Date().toISOString();
-      await Store.replace(out);
+      await Store.replace(out, "merge");
       const same = sameContent(srv, MD.serialize(out)) && (E2EE.isEncrypted(blob) || !acct.e2ee);   // 合并后和服务器一样：不用再推
       setMeta(id, { base: version, dirty: !same }); setBaseText(id, srv);
       return same ? undefined : push(id, attempt + 1);
@@ -138,7 +154,7 @@ const Sync = (() => {
     if (running) { again = true; return { ok: true, busy: true }; }
     if (!navigator.onLine) { onStatus("离线中，联网后自动同步", "off"); return { ok: false, error: "现在没联网" }; }
     running = true; clearTimeout(timer); tally = { pulled: 0, pushed: 0 }; notes = [];
-    let result;
+    let result, failedWeeks = false;
     try {
       const justEnabled = await checkAccount();
       const r = await api("/api/weeks");
@@ -151,18 +167,19 @@ const Sync = (() => {
         if (!m.dirty && !Store.pending(id) && m.base !== ver) await pull(id);
       }
       // 刚开启加密：服务器上每一周都要换成密文
-      if (justEnabled) { for (const id of new Set([...remote.keys(), ...Store.localIds()])) markDirty(id); notes.push("已开启端到端加密，服务器上的数据都换成了密文"); }
+      if (justEnabled) { for (const id of new Set([...remote.keys(), ...Store.localIds()])) markDirty(id); notes.push("已开启端到端加密，服务器上的数据都换成了密文"); log("info", "已开启端到端加密，服务器上的数据都换成了密文"); }
       const failed = [];
       for (const id of dirtyIds()) {
         if (Store.pending(id)) continue;
         try { await push(id); } catch (e) { if (e instanceof WeekError) failed.push(e.message); else throw e; }
       }
-      if (failed.length) throw new Error(failed.join("；"));
+      if (failed.length) { failedWeeks = true; throw new Error(failed.join("；")); }   // 每周的错误上面已经记过了
       const notice = notes.join("；");
       lastOk = new Date(); result = { ok: true, ...tally, notice }; onStatus(notice, notice ? "warn" : "");
     } catch (e) {
       const msg = e.message === "Failed to fetch" ? "连不上服务器" : e.message;
       result = { ok: false, error: msg, code: e.code }; onStatus("同步没成功：" + msg, "err");
+      if (!failedWeeks) log("error", "同步没成功：" + msg);
     } finally {
       running = false;
       if (again) { again = false; soon(500); } else soon(30000);
@@ -176,6 +193,8 @@ const Sync = (() => {
     enabled, markDirty, soon, run,
     get lastOk() { return lastOk; },
     get pendingCount() { return dirtyIds().length; },   // 还没上传到服务器的周数
+    get log() { return (load(LOG) || []).slice().reverse(); },   // 新的在前
+    clearLog() { try { localStorage.removeItem(LOG); } catch (e) {} },
     get account() { return { ...acct }; },
 
     // 在新设备上输入恢复码。账号已开加密时，先确认指纹对得上再装入

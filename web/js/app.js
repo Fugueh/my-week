@@ -34,7 +34,7 @@ let unseenWarn = "";   // 提醒要一直留着，直到用户点开胶囊看过
 Sync.hooks({ onStatus: (t, kind = t ? "err" : "") => {
   if (kind === "warn") unseenWarn = unseenWarn && unseenWarn !== t ? unseenWarn + "；" + t : t;
   else if (!kind && unseenWarn) { t = unseenWarn; kind = "warn"; }
-  syncMsg = t; syncKind = kind; syncInfo(); if (typeof renderE2EE === "function") renderE2EE();
+  syncMsg = t; syncKind = kind; syncInfo(); renderLog(); if (typeof renderE2EE === "function") renderE2EE();
 } });
 (() => {
   const c = Sync.cfg; $("syncServer").value = c.server; $("syncToken").value = c.token;
@@ -116,6 +116,7 @@ function copyText(t, btn) {
 E2EE.ready.then(() => renderE2EE());
 document.querySelectorAll("[data-sync]").forEach(b => b.onclick = () => {
   if (view !== "week") { weekStart = monday(fromKey(selDay)); show("week"); }
+  if (syncKind === "warn" || syncKind === "err") $("logBox").open = true;   // 有提醒或出错时，顺手展开同步记录
   $("syncBox").open = true; $("syncBox").scrollIntoView({ behavior: "smooth", block: "center" });
   unseenWarn = "";   // 面板里已经显示着这条提醒，看过了；下一轮同步成功后就不再保留
 });
@@ -509,6 +510,62 @@ $("linkDir").onclick = async () => {
 $("exportWk").onclick = async () => { try { await Store.exportWeek(Store.get(dkey(weekStart))); } catch (e) { if (!/cancel/i.test(e.message || "")) status("导出失败：" + e.message); } };
 $("importWk").onclick = () => $("importFile").click();
 $("importFile").onchange = async () => { const n = await Store.importFiles([...$("importFile").files]); status(`导入了 ${n} 周`); $("importFile").value = ""; };
+
+/* ---- 历史版本（本机快照） ---- */
+const when = t => { const d = new Date(t); return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+// 一周里的条目，用来和现在比「多了几条、少了几条」
+const itemsOf = w => [...w.goals.map(g => "g" + g.text), ...w.events.map(e => "e" + e.wd + e.text),
+                      ...Object.entries(w.days).flatMap(([k, l]) => l.map(e => "d" + k + e.ts + e.text)), ...(w.review.trim() ? ["r" + w.review.trim()] : [])];
+function diffText(snap, cur) {
+  const a = new Set(itemsOf(snap)), b = new Set(itemsOf(cur));
+  const more = [...a].filter(x => !b.has(x)).length, less = [...b].filter(x => !a.has(x)).length;
+  return more || less ? `比现在${more ? ` 多 ${more} 条` : ""}${less ? ` 少 ${less} 条` : ""}` : "条目和现在一样";
+}
+let histWeek = null, histPick = null;
+async function openHist() {
+  const cur = Store.get(dkey(weekStart)); histWeek = cur.week;
+  $("histTitle").textContent = `${cur.week} 的历史版本`;
+  $("histView").hidden = true; $("histList").hidden = false;
+  const list = await Snap.list(histWeek), ul = $("histList"); ul.textContent = "";
+  if (!list.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "这一周在这台设备上还没有存过旧版本。"; ul.append(li); }
+  for (const s of list) {
+    const li = document.createElement("li"), b = document.createElement("button"); b.type = "button";
+    let d = ""; try { d = diffText(MD.parse(s.text), cur); } catch (e) { d = "读不懂"; }
+    const t = document.createElement("time"), why = document.createElement("span"), df = document.createElement("span");
+    t.textContent = when(s.at); why.className = "why"; why.textContent = Snap.label(s.reason); df.className = "diff"; df.textContent = d;
+    b.append(t, why, df); b.onclick = () => showSnap(s); li.append(b); ul.append(li);
+  }
+  if (!$("histDlg").open) $("histDlg").showModal();
+}
+function showSnap(s) {
+  histPick = s;
+  $("histMeta").textContent = `${when(s.at)} · ${Snap.label(s.reason)}`;
+  $("histText").textContent = s.text;
+  $("histList").hidden = true; $("histView").hidden = false;
+}
+$("histWk").onclick = () => openHist().catch(e => status("历史版本打不开：" + e.message));
+$("histClose").onclick = () => $("histDlg").close();
+$("histBack").onclick = () => { $("histView").hidden = true; $("histList").hidden = false; };
+$("histRestore").onclick = async () => {
+  if (!histPick || !confirm(`把 ${histWeek} 换成 ${when(histPick.at)} 的这一版？现在的内容会先存成一份历史版本，恢复后会同步到其他设备。`)) return;
+  await Store.restore(histWeek, histPick.text);
+  $("histDlg").close(); render(); status(`已恢复成 ${when(histPick.at)} 的版本`);
+};
+
+/* ---- 同步记录 ---- */
+function renderLog() {
+  if (!$("logBox").open) return;
+  const ul = $("logList"); ul.textContent = "";
+  const l = Sync.log;
+  if (!l.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "还没有记录。上传、下载、合并和出错都会记在这里。"; ul.append(li); return; }
+  for (const x of l.slice(0, 100)) {
+    const li = document.createElement("li"), t = document.createElement("time"), s = document.createElement("span");
+    li.className = "k-" + x.kind; t.textContent = when(x.at); s.textContent = x.text + (x.n > 1 ? `（连续 ${x.n} 次）` : "");
+    li.append(t, s); ul.append(li);
+  }
+}
+$("logBox").addEventListener("toggle", renderLog);
+$("logClear").onclick = () => { Sync.clearLog(); renderLog(); };
 
 /* ---- 日记导航 ---- */
 function goDay(k) { selDay = k; weekStart = monday(fromKey(k)); show("day"); }
