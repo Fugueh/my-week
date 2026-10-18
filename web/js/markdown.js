@@ -24,8 +24,24 @@
 // 自由文本，原样保存。
 //
 // 规则：缩进两个空格（或一个 Tab）为一层；不认识的 ## 段落原样保留在文件末尾。
+//
+// 条目 ID：每个目标、事项、日记条目行尾带一个 ` ^k3f9a2`（Obsidian 的块 ID 写法，也能用 [[2026-W42#^k3f9a2]] 引用）。
+// 合并时靠它认出「这是同一条」，改了字也认得出来。多行的日记条目，ID 写在最后一行末尾。
+// 没有 ID 的条目（旧版本写的、在编辑器里手写的）按内容算一个固定的 ID：同样的内容在每台设备上算出来都一样，
+// 所以新旧版本混用时也能对上；下次保存时写进文件。同一周里 ID 重复（比如在编辑器里复制了一行）时，后出现的那条换一个。
 const MD = (() => {
   const H_GOALS = "周目标", H_EVENTS = "这周的事", H_DIARY = "日记", H_REVIEW = "复盘";
+
+  const ID_RE = /\s+\^([A-Za-z0-9-]+)\s*$/;
+  const safeId = id => String(id).replace(/[^A-Za-z0-9-]/g, "-");
+  const tag = it => " ^" + safeId(it.id || hash("x|" + it.text));
+  const newId = () => (Math.random().toString(36).slice(2, 8) + "000000").slice(0, 6);
+  function hash(s) {   // FNV-1a，只用来给没有 ID 的条目算一个固定的 ID
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return "h" + (h >>> 0).toString(36);
+  }
+  const takeId = (s, it) => { const m = s.match(ID_RE); if (!m) return s; it.id = m[1]; return s.slice(0, m.index); };
 
   const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const md = d => `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -34,14 +50,14 @@ const MD = (() => {
     const out = ["---", `week: ${w.week}`, `start: ${w.start}`];
     if (w.updated) out.push(`updated: ${w.updated}`);
     out.push("---", "", `## ${H_GOALS}`);
-    w.goals.forEach(g => out.push(`- [${g.done ? "x" : " "}] ${oneLine(g.text)}`));
+    w.goals.forEach(g => out.push(`- [${g.done ? "x" : " "}] ${oneLine(g.text)}${tag(g)}`));
 
     out.push("", `## ${H_EVENTS}`);
     for (let i = 0; i < 7; i++) {
       const ev = w.events.filter(e => e.wd === i);
       if (!ev.length) continue;
       out.push(`### 周${WD[i]}`);
-      ev.forEach(e => out.push(`- ${oneLine(e.text)}`));
+      ev.forEach(e => out.push(`- ${oneLine(e.text)}${tag(e)}`));
     }
 
     out.push("", `## ${H_DIARY}`);
@@ -54,6 +70,7 @@ const MD = (() => {
         let stamp = "";
         if (e.ts != null) { const t = new Date(e.ts); stamp = (dkey(t) === k ? hm(t) : `${md(t)} ${hm(t)}`) + " "; }
         const lines = String(e.text || "").split("\n");
+        lines[lines.length - 1] += tag(e);                         // ID 在条目最后一行末尾
         out.push(`${ind}- ${stamp}${lines[0]}`);
         lines.slice(1).forEach(l => out.push(`${ind}  ${l}`));      // 多行条目：续行比圆点多缩进两格
       });
@@ -118,27 +135,44 @@ const MD = (() => {
       const indent = b ? Math.floor(b[1].replace(/\t/g, "  ").length / 2) : 0;
       if (sec === H_GOALS) {
         if (!b) continue;
-        const m = b[2].match(/^\[([ xX])\]\s*(.*)$/);
-        w.goals.push({ id: "g_" + uid(), done: m ? m[1] !== " " : false, text: m ? m[2] : b[2] });
+        const m = b[2].match(/^\[([ xX])\]\s*(.*)$/), g = { id: null, done: m ? m[1] !== " " : false };
+        g.text = takeId(m ? m[2] : b[2], g); w.goals.push(g);
       } else if (sec === H_EVENTS) {
-        if (!b) { if (last) last.text += " " + line.trim(); continue; }
-        last = { id: "w_" + uid(), wd: sub ?? 0, text: b[2] }; w.events.push(last);
+        if (!b) { if (last) last.text += " " + takeId(line.trim(), last); continue; }
+        last = { id: null, wd: sub ?? 0 }; last.text = takeId(b[2], last); w.events.push(last);
       } else if (sec === H_DIARY) {
         if (!sub) continue;
-        if (!b) { if (last) last.text += "\n" + line.trim(); continue; }   // 续行
-        let body = b[2], ts = null;
+        if (!b) { if (last) last.text += "\n" + takeId(line.trim(), last); continue; }   // 续行
+        const it = { id: null };
+        let body = takeId(b[2], it), ts = null;
         const full = body.match(/^(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})\s+(.*)$/);
         const short = body.match(/^(\d{1,2}):(\d{2})(?:\s+(.*))?$/);
         if (full) { const d = resolveMD(start, +full[1], +full[2]); d.setHours(+full[3], +full[4]); ts = d.getTime(); body = full[5]; }
         else if (short && +short[1] < 24) { const d = fromKey(sub); d.setHours(+short[1], +short[2]); ts = d.getTime(); body = short[3] || ""; }
         const list = w.days[sub], prevInd = list.length ? list[list.length - 1].indent : -1;
-        last = { id: "e_" + uid(), ts, indent: Math.min(indent, prevInd + 1), text: body };
+        last = { id: it.id, ts, indent: Math.min(indent, prevInd + 1), text: body };
         list.push(last);
       }
     }
     w.review = reviewBuf.join("\n").replace(/^\n+|\s+$/g, "");
     w.extra = extraBuf.join("\n").replace(/^\n+|\s+$/g, "");
+    assignIds(w);
     return w;
+  }
+
+  // 补上没有的 ID、换掉重复的 ID。只用内容和顺序算，保证每台设备上算出来一样
+  function assignIds(w) {
+    const lists = [["g", w.goals, g => g.text], ["w", w.events, e => e.wd + "|" + e.text],
+                   ...Object.keys(w.days).sort().map(k => ["d" + k, w.days[k], e => e.ts + "|" + e.text])];
+    const seen = new Set();
+    for (const [sec, list, keyOf] of lists) {
+      const n = new Map();
+      for (const it of list) {
+        if (!it.id) { const k = sec + "|" + keyOf(it), c = (n.get(k) || 0) + 1; n.set(k, c); it.id = hash(k + "|" + c); }
+        for (let c = 2; seen.has(it.id); c++) it.id = hash(it.id + "#" + c);
+        seen.add(it.id);
+      }
+    }
   }
 
   function startOfIsoWeek(id) {
@@ -147,5 +181,5 @@ const MD = (() => {
     return dkey(addDays(monday(jan4), (+m[2] - 1) * 7));
   }
 
-  return { serialize, parse, startOfIsoWeek };
+  return { serialize, parse, startOfIsoWeek, newId };
 })();
