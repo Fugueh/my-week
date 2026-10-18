@@ -11,6 +11,7 @@ services:
     volumes:
       - ./data:/data                                   # 先用自己的身份 mkdir data，服务就会以你的身份写文件
       - ./config:/config:ro                            # 读熟人名单 config/users.txt
+      - ./downloads:/app/web/download:ro               # 放 my-week.apk，公开下载地址 /download/my-week.apk
     ports:
       - "127.0.0.1:8000:8000"                          # 只对本机开放，由反代转发进来
     mem_limit: 128m
