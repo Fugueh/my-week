@@ -453,7 +453,7 @@ function focusId(id) {
 }
 function newAfter(id) {
   const list = dayList(selDay), idx = id ? list.findIndex(x => x.id === id) : list.length - 1;
-  const e = { id: "e_" + uid(), ts: Date.now(), indent: idx >= 0 ? list[idx].indent : 0, text: "" };
+  const e = { id: MD.newId(), ts: Date.now(), indent: idx >= 0 ? list[idx].indent : 0, text: "" };
   list.splice(idx + 1, 0, e); Store.save(Store.forDay(selDay)); holdSort = true; render();
   focusId(e.id);   // render 是同步的，新行已经在页面上，立刻聚焦，免得第一个字丢掉
 }
@@ -485,7 +485,7 @@ function keys(ev, e, tx) {
 $("dayForm").onsubmit = ev => {
   ev.preventDefault(); const s = $("dayIn").value.trim(); if (!s) return;
   const list = dayList(selDay);
-  list.unshift({ id: "e_" + uid(), ts: Date.now(), indent: 0, text: s });   // 最新的在最上面
+  list.unshift({ id: MD.newId(), ts: Date.now(), indent: 0, text: s });   // 最新的在最上面
   Store.save(Store.forDay(selDay), { now: true }); $("dayIn").value = ""; render(); $("dayIn").focus();
 };
 const tid = () => $("tools").dataset.id;
@@ -508,7 +508,7 @@ $("wkForm").onsubmit = ev => {
   ev.preventDefault(); const s = $("wkIn").value.trim(); if (!s) return;
   const w = Store.get(dkey(weekStart));
   const wd = Number($("wkDay").value), at = w.events.findIndex(x => x.wd === wd);
-  const item = { id: "w_" + uid(), wd, text: s };
+  const item = { id: MD.newId(), wd, text: s };
   if (at < 0) w.events.push(item); else w.events.splice(at, 0, item);   // 新记的放在那天最上面
   const f = foldState(w.week); if (f.delete(wd)) saveFold(w.week, f);   // 记到收起的那天就自动展开
   Store.save(w, { now: true }); $("wkIn").value = ""; render(); $("wkIn").focus();
@@ -516,7 +516,7 @@ $("wkForm").onsubmit = ev => {
 $("goalForm").onsubmit = ev => {
   ev.preventDefault(); const s = $("goalIn").value.trim(); if (!s) return;
   const w = Store.get(dkey(weekStart));
-  w.goals.push({ id: "g_" + uid(), text: s, done: false });
+  w.goals.push({ id: MD.newId(), text: s, done: false });
   Store.save(w, { now: true }); $("goalIn").value = ""; render();
 };
 $("extra").oninput = () => { const w = Store.get(dkey(weekStart)); w.extra = $("extra").value; Store.save(w); };

@@ -78,19 +78,54 @@ t("服务器改了字、本地没动 → 用服务器改后的", () => {
   const r = merge(S0(), S0(), mk({ events: { 日: ["甲", "乙改", "丙"] } }));
   assert.deepStrictEqual(ev(r), ["甲", "乙改", "丙"]);
 });
+// 带 ID 的写法（新版本存下来的文件都是这样）：改了字 ID 不变，合并认得出是同一条
+const I0 = () => mk({ events: { 日: ["甲 ^a", "乙 ^b", "丙 ^c"] } });
+const ie = l => mk({ events: { 日: l } });
 t("同一条两边改成不同的字 → 后推送的（本设备）为准，覆盖服务器上那一条并记录", () => {
-  const r = merge(S0(), mk({ events: { 日: ["甲", "乙本地", "丙"] } }), mk({ events: { 日: ["甲", "乙服务器", "丙"] } }));
+  const r = merge(I0(), ie(["甲 ^a", "乙本地 ^b", "丙 ^c"]), ie(["甲 ^a", "乙服务器 ^b", "丙 ^c"]));
   assert.deepStrictEqual(ev(r), ["甲", "乙本地", "丙"]);
   assert.strictEqual(r.overwritten.length, 1);
   assert.ok(r.overwritten[0].includes("乙服务器"));
 });
-t("服务器删了一条、本地把它改了字 → 本设备改后的留下（后推送的为准）", () => {
-  const r = merge(S0(), mk({ events: { 日: ["甲", "乙改", "丙"] } }), mk({ events: { 日: ["甲", "丙"] } }));
+t("没有 ID 的旧文件里同一条两边改成不同的字 → 认不出是同一条，两版都留下（不丢）", () => {
+  const r = merge(S0(), mk({ events: { 日: ["甲", "乙本地", "丙"] } }), mk({ events: { 日: ["甲", "乙服务器", "丙"] } }));
+  assert.deepStrictEqual(ev(r).slice().sort(), ["甲", "乙本地", "乙服务器", "丙"].sort());
+  assert.deepStrictEqual(r.overwritten, []);
+});
+t("服务器删了一条、本地把它改了字 → 本设备改后的留下（改了的比删了的优先）", () => {
+  const r = merge(I0(), ie(["甲 ^a", "乙改 ^b", "丙 ^c"]), ie(["甲 ^a", "丙 ^c"]));
   assert.deepStrictEqual(ev(r), ["甲", "乙改", "丙"]);
   assert.strictEqual(r.overwritten.length, 0);
 });
+t("本地删了一条、服务器把它改了字 → 服务器改后的留下", () => {
+  const r = merge(I0(), ie(["甲 ^a", "丙 ^c"]), ie(["甲 ^a", "乙改 ^b", "丙 ^c"]));
+  assert.deepStrictEqual(ev(r), ["甲", "乙改", "丙"]);
+});
+t("一边改了字、另一边把同一条挪了位置 → 字和位置都保留", () => {
+  const r = merge(I0(), ie(["乙 ^b", "甲 ^a", "丙 ^c"]), ie(["甲 ^a", "乙改 ^b", "丙 ^c"]));
+  assert.deepStrictEqual(ev(r), ["乙改", "甲", "丙"]);
+  assert.deepStrictEqual(r.overwritten, []);
+});
+t("一边把一条挪到别的周几、另一边改了它的字 → 两样都保留", () => {
+  const base = mk({ events: { 一: ["开会 ^m"] } });
+  const r = merge(base, mk({ events: { 三: ["开会 ^m"] } }), mk({ events: { 一: ["开会改到下午 ^m"] } }));
+  assert.deepStrictEqual(Array.from(r.week.events, e => [e.wd, e.text]), [[2, "开会改到下午"]]);   // wd 从周一 = 0 数起
+});
+t("勾选和改字分别在两边 → 都保留；两边把字改得不一样 → 本地为准并记录", () => {
+  const g = (d, s) => MD.parse(head + `## 周目标\n- [${d}] ${s} ^g\n\n## 这周的事\n\n## 日记\n\n## 复盘\n`);
+  let r = merge(g(" ", "跑步"), g("x", "跑步"), g(" ", "跑步 5 公里"));
+  assert.deepStrictEqual([r.week.goals[0].done, r.week.goals[0].text], [true, "跑步 5 公里"]);
+  r = merge(g(" ", "跑步"), g(" ", "跑步 3 公里"), g(" ", "跑步 5 公里"));
+  assert.strictEqual(r.week.goals[0].text, "跑步 3 公里");
+  assert.ok(r.overwritten[0].includes("跑步 5 公里"));
+});
+t("日记：一边改了时间、另一边改了字 → 都保留", () => {
+  const r = merge(mk({ diary: ["10:00 开会 ^d"] }), mk({ diary: ["10:30 开会 ^d"] }), mk({ diary: ["10:00 开会，迟到了 ^d"] }));
+  const e = Object.values(r.week.days)[0][0];
+  assert.deepStrictEqual([new Date(e.ts).getHours(), new Date(e.ts).getMinutes(), e.text], [10, 30, "开会，迟到了"]);
+});
 t("本地改了一条的同时又新加了一条 → 改的那条本地为准，新加的也留下", () => {
-  const r = merge(S0(), mk({ events: { 日: ["甲", "乙改", "丙", "新加"] } }), mk({ events: { 日: ["甲", "乙服务器", "丙"] } }));
+  const r = merge(I0(), ie(["甲 ^a", "乙改 ^b", "丙 ^c", "新加 ^n"]), ie(["甲 ^a", "乙服务器 ^b", "丙 ^c"]));
   assert.deepStrictEqual(ev(r), ["甲", "乙改", "丙", "新加"]);
   assert.strictEqual(r.overwritten.length, 1);
 });
@@ -113,5 +148,31 @@ t("幂等：合并的结果再和自己合并，不变", () => {
   const r = merge(S0(), mk({ events: { 日: ["丙", "甲", "乙", "本地新"] } }), mk({ events: { 日: ["乙", "甲", "丙", "服务器新"] } })).week;
   assert.strictEqual(text(merge(r, r, r).week), text(r));
   assert.strictEqual(text(merge(null, r, r).week), text(r));
+});
+
+/* ---- 条目 ID 的读写 ---- */
+const FILE = head + "## 周目标\n- [ ] 投简历\n- [x] 跑步 ^abc\n\n## 这周的事\n### 周日\n- 甲\n- 甲\n- 乙 ^abc\n\n" +
+  "## 日记\n### 10-18 周日\n- 11:57 开始画手帐\n  第二行 ^d1\n  - 11:59 决定 x^y 做网页版\n\n## 复盘\n好\n";
+t("ID：行尾的 ^id 读成条目 ID，不算进文字；多行日记的 ID 在最后一行；文字中间的 ^ 不受影响", () => {
+  const w = MD.parse(FILE), d = w.days["2026-10-18"];
+  assert.deepStrictEqual([w.goals[1].id, w.goals[1].text], ["abc", "跑步"]);
+  assert.deepStrictEqual([d[0].id, d[0].text], ["d1", "开始画手帐\n第二行"]);
+  assert.strictEqual(d[1].text, "决定 x^y 做网页版");
+  assert.ok(MD.serialize(w).includes("  第二行 ^d1\n"), "多行条目的 ID 写回最后一行");
+});
+t("ID：没有 ID 的条目按内容算出固定的 ID，每次读都一样；同一周里重复的 ID 换成新的", () => {
+  const a = MD.parse(FILE), b = MD.parse(FILE);
+  assert.deepStrictEqual(JSON.stringify(a), JSON.stringify(b));
+  const ids = [...a.goals, ...a.events, ...a.days["2026-10-18"]].map(x => x.id);
+  assert.strictEqual(new Set(ids).size, ids.length, "一周里 ID 不重复：" + ids);
+  assert.strictEqual(a.goals[1].id, "abc", "先出现的保留原 ID");
+  assert.notStrictEqual(a.events[0].id, a.events[1].id, "两条一样的「甲」也要分得开");
+});
+t("ID：写出去再读回来不变（幂等）", () => {
+  const s1 = MD.serialize(MD.parse(FILE));
+  assert.strictEqual(MD.serialize(MD.parse(s1)), s1);
+});
+t("ID：新建条目的 ID 是 6 位小写字母数字，符合 Obsidian 块 ID 的写法", () => {
+  for (let i = 0; i < 50; i++) assert.match(MD.newId(), /^[a-z0-9]{6}$/);
 });
 console.log(`\n${n} 项通过`);
