@@ -67,16 +67,20 @@ const t = async (name, fn) => { await fn(); n++; console.log("ok  " + name); };
     assert.strictEqual(a.run('Store.byId("2026-W42").extra'), "");
   });
 
-  await t("同一条两边改成不同的字 → 以服务器（先到的）为准，后到的设备提示丢了哪一条", async () => {
+  await t("同一条两边改成不同的字 → 后推送的设备为准，两边最后一致，没有提示和冲突副本", async () => {
     const s = server(); s.files.set("2026-W42", MD0);
     const a = device(s, "手机"), b = device(s, "电脑");
     await a.sync(); await b.sync();
     a.edit(w => { w.events.find(e => e.text === "乙").text = "乙·手机"; });
     b.edit(w => { w.events.find(e => e.text === "乙").text = "乙·电脑"; });
+    await a.sync();                                  // 手机先到服务器
+    const rb = await b.sync();                       // 电脑后到：以电脑为准
+    assert.strictEqual(rb.ok, true, JSON.stringify(rb));
+    assert.ok(!rb.notice, "不应该有提示：" + rb.notice);
     await a.sync();
-    const rb = await b.sync();
-    assert.ok(rb.notice && rb.notice.includes("乙·电脑"), "应提示丢掉了电脑上的这条：" + rb.notice);
-    assert.deepStrictEqual(b.items().slice().sort(), ["乙·手机", "甲"].sort());
+    assert.deepStrictEqual(b.items().slice().sort(), ["乙·电脑", "甲"].sort());
+    assert.deepStrictEqual(a.items().slice().sort(), ["乙·电脑", "甲"].sort());
+    assert.ok(!s.files.get("2026-W42").includes("冲突副本"));
   });
 
   await t("本地删了一条，另一台没动 → 同步后两边都没有", async () => {

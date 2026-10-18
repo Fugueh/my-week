@@ -4,7 +4,7 @@
 //   - 本地没改、服务器版本变了 → 拉下来
 //   - 本地改过 → 带着 base 推上去；服务器发现 base 已经过时就回 409，
 //     这时把「上次对齐的那份（baseText）、本地、服务器」按条目三方合并（merge.js），再推上去。
-//     两边加的条目都留下；同一条被两边改成不同的字时以服务器为准，本地那条丢掉并在页面上提示。
+//     两边加的条目都留下；同一条被两边改成不同的字时，后推送的这一边为准。
 // 触发：每 30 秒、切回页面、恢复联网、本地保存后 2 秒。
 //
 // 端到端加密（crypto.js）：账号开了加密后，推上去的是密文，拉下来先解密；
@@ -88,12 +88,11 @@ const Sync = (() => {
       const bt = baseText(id);
       let merged;
       try { merged = Merge.weeks(bt ? MD.parse(bt) : null, MD.parse(text), MD.parse(srv)); }
-      catch (e) { merged = { week: MD.parse(srv), dropped: [] }; }   // 合并不了就整份以服务器为准
+      catch (e) { merged = { week: MD.parse(srv), overwritten: [] }; }   // 合并不了就整份以服务器为准
       const out = merged.week; out.updated = new Date().toISOString();
       await Store.replace(out);
       const same = sameContent(srv, MD.serialize(out)) && (E2EE.isEncrypted(blob) || !acct.e2ee);   // 合并后和服务器一样：不用再推
       setMeta(id, { base: version, dirty: !same }); setBaseText(id, srv);
-      if (merged.dropped.length) notice = `${id} 刚被另一台设备改过，和服务器上不一致的 ${merged.dropped.length} 处以服务器为准，本设备的这几条没有保留：${merged.dropped.join("；")}`;
       return same ? undefined : push(id, attempt + 1);
     }
     if (r.status === 422) throw new Error("服务器拒收明文：这个账号开了加密，请先在下面输入恢复码");
