@@ -14,3 +14,6 @@ node_modules/
 /.env.example
 /docker-compose.override.yml
 __pycache__/
+
+# 本机的真实日记导出（含个人内容），只给测试对照用，不进公开仓库
+/2026-w*.md

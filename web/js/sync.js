@@ -3,7 +3,8 @@
 // 每台设备给每一周记两件事：base（上次和服务器对上时的版本号）和 dirty（之后本地改过没有）。
 //   - 本地没改、服务器版本变了 → 拉下来
 //   - 本地改过 → 带着 base 推上去；服务器发现 base 已经过时就回 409，
-//     这时以服务器版本为准，把本地这份追加成「冲突副本」段落，再推上去。内容不会丢。
+//     这时把「上次对齐的那份（baseText）、本地、服务器」按条目三方合并（merge.js），再推上去。
+//     两边加的条目都留下；同一条被两边改成不同的字时以服务器为准，本地那条丢掉并在页面上提示。
 // 触发：每 30 秒、切回页面、恢复联网、本地保存后 2 秒。
 //
 // 端到端加密（crypto.js）：账号开了加密后，推上去的是密文，拉下来先解密；
@@ -42,11 +43,10 @@ const Sync = (() => {
   }
   function soon(ms = 2000) { clearTimeout(timer); timer = setTimeout(run, ms); }
 
-  // 去掉 front matter，把标题降两级，作为冲突副本塞进文件末尾（解析时会原样保留）
-  function asCopy(text) {
-    return text.replace(/^---\n[\s\S]*?\n---\n/, "").trim()
-      .split("\n").map(l => l.replace(/^(#{2,})(\s)/, "##$1$2")).join("\n");
-  }
+  // 每周再存一份「上次和服务器对齐时的全文」，三方合并要用
+  const BASE = "myweek-base:";
+  const baseText = id => { try { return localStorage.getItem(BASE + id); } catch (e) { return null; } };
+  const setBaseText = (id, t) => { try { localStorage.setItem(BASE + id, t); } catch (e) {} };
   const sameContent = (a, b) => a.replace(/^updated:.*$/m, "") === b.replace(/^updated:.*$/m, "");
 
   let tally = { pulled: 0, pushed: 0 };
@@ -61,6 +61,7 @@ const Sync = (() => {
     try { w = MD.parse(plain ? await E2EE.decrypt(blob, id) : blob); }
     catch (e) { notice = `服务器上的 ${id} 读不出来（${e.message}），这一周先跳过，其他照常同步`; return; }
     await Store.replace(w);
+    setBaseText(id, plain ? await E2EE.decrypt(blob, id) : blob);
     // 账号开了加密，服务器上却还是明文（开启加密前留下的）：标成要推，下一步就会加密覆盖掉
     setMeta(id, { base: ver, dirty: acct.e2ee && !plain }); tally.pulled++;
   }
@@ -76,19 +77,24 @@ const Sync = (() => {
       const { version } = await r.json();
       // 推的过程中又改了的话，保持 dirty，下轮再推
       setMeta(id, { base: version, dirty: Store.pending(id) || MD.serialize(Store.byId(id) || w) !== text });
+      setBaseText(id, text);
       tally.pushed++; return;
     }
     if (r.status === 409 && attempt < 2) {
       const { version, text: blob } = await r.json();
       const srv = E2EE.isEncrypted(blob) ? await E2EE.decrypt(blob, id) : blob;   // 在设备上解开再合并
-      if (sameContent(srv, text)) { setMeta(id, { base: version, dirty: false }); return; }
-      const sw = MD.parse(srv), stamp = new Date().toLocaleString("zh-CN", { hour12: false });
-      sw.extra = [sw.extra, `## 冲突副本 · ${stamp}\n这一周在两台设备上同时改过。上面是服务器上的版本，下面是本设备的版本，请手动合并后删掉这一段。\n\n${asCopy(text)}`]
-        .filter(Boolean).join("\n\n");
-      await Store.replace(sw);
-      setMeta(id, { base: version, dirty: true });
-      notice = `${id} 在两台设备上都改过，已存成「冲突副本」，在那周页面的最下面`;
-      return push(id, attempt + 1);
+      // 服务器上是明文而账号已开加密时，不能当作「已经一致」：还要把密文推上去
+      if (sameContent(srv, text) && (E2EE.isEncrypted(blob) || !acct.e2ee)) { setMeta(id, { base: version, dirty: false }); setBaseText(id, srv); return; }
+      const bt = baseText(id);
+      let merged;
+      try { merged = Merge.weeks(bt ? MD.parse(bt) : null, MD.parse(text), MD.parse(srv)); }
+      catch (e) { merged = { week: MD.parse(srv), dropped: [] }; }   // 合并不了就整份以服务器为准
+      const out = merged.week; out.updated = new Date().toISOString();
+      await Store.replace(out);
+      const same = sameContent(srv, MD.serialize(out)) && (E2EE.isEncrypted(blob) || !acct.e2ee);   // 合并后和服务器一样：不用再推
+      setMeta(id, { base: version, dirty: !same }); setBaseText(id, srv);
+      if (merged.dropped.length) notice = `${id} 刚被另一台设备改过，和服务器上不一致的 ${merged.dropped.length} 处以服务器为准，本设备的这几条没有保留：${merged.dropped.join("；")}`;
+      return same ? undefined : push(id, attempt + 1);
     }
     if (r.status === 422) throw new Error("服务器拒收明文：这个账号开了加密，请先在下面输入恢复码");
     throw new Error("推送失败 " + r.status);

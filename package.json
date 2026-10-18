@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "sync": "cap sync android",
-    "open": "cap open android"
+    "open": "cap open android",
+    "test": "node tests/merge.test.js && node tests/sync.test.js"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
