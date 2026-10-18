@@ -1,7 +1,7 @@
 // 离线可用：页面文件整版缓存。安装时把 SHELL 一次下全放进 CACHE，之后只从这一版里取，运行时不再逐个写回，
 // 所以不会出现新 app.js 配旧 sync.js。新版本 = 新的 CACHE 名 → 浏览器发现 sw.js 变了 → 装好新的一整版 → 等页面说可以了再切换。
 // CACHE 后面的哈希由 tests/sw-version.test.js 按 SHELL 文件内容算；改了 web/ 下的文件就跑 node tests/sw-version.test.js --fix。/api 不缓存。
-const CACHE = "myweek-800e79eb";
+const CACHE = "myweek-b2a65d53";
 const SHELL = ["index.html", "css/style.css", "js/dates.js", "js/markdown.js", "js/merge.js", "js/crypto.js", "js/history.js", "js/store.js", "js/sync.js", "js/app.js",
                "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 const ROOT = new URL(self.registration.scope).pathname, URLS = new Set(SHELL.map(p => new URL(p, self.registration.scope).pathname));
