@@ -1,0 +1,36 @@
+# 配置都在 config/ 里。部署：docker compose up -d --build
+# 默认只启动 app，HTTPS 交给服务器上已有的反代（Caddy / Nginx）。
+# 换到一台 80/443 空着的新机器时，可以用自带的 Caddy：docker compose --profile standalone up -d --build
+services:
+  app:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file: ./config/.env                            # MYWEEK_TOKEN
+    volumes:
+      - ./data:/data                                   # 先用自己的身份 mkdir data，服务就会以你的身份写文件
+      - ./config:/config:ro                            # 读熟人名单 config/users.txt
+    ports:
+      - "127.0.0.1:8000:8000"                          # 只对本机开放，由反代转发进来
+    mem_limit: 128m
+
+  caddy:
+    profiles: [standalone]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    env_file: ./config/.env                            # DOMAIN
+    volumes:
+      - ./config/caddy/Caddyfile.standalone:/etc/caddy/Caddyfile:ro   # 从 config.example/caddy/ 复制过来
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+    mem_limit: 128m
+
+volumes:
+  caddy_data:
+  caddy_config:

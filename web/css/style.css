@@ -1,0 +1,216 @@
+/* 浏览器默认样式会被 display:flex 盖过，这一行保证 hidden 真的隐藏 */
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+
+/* Layout: notebook column on grid paper — 7 day buttons on top, the chosen day's outline diary, then goals and review */
+:root{
+  --paper:#f3f5f7; --grid:#e1e6ec; --ink:#1f2a44; --muted:#6b7487;
+  --accent:#3a5bd9; --accent-soft:#dfe5fb; --line:#cfd6e0; --done:#8a93a6;
+  --tsL:.56; --tsC:.15; --surface:#ffffff; --chipL0:.94; --chipDL:.1; --chipHotFg:#fff; --chipC0:.04; --chipDC:.03;
+  --f-display:"ZCOOL KuaiLe","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --f-body:"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#161a22; --grid:#20262f; --ink:#e3e8f2; --muted:#8d97aa;
+  --accent:#8ea6ff; --accent-soft:#26304f; --line:#2f3743; --done:#6c7586; --tsL:.78; --tsC:.13; --surface:#1e232d; --chipL0:.34; --chipDL:-.085; --chipHotFg:#161a22; --chipC0:.04; --chipDC:.028; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#161a22; --grid:#20262f; --ink:#e3e8f2; --muted:#8d97aa;
+  --accent:#8ea6ff; --accent-soft:#26304f; --line:#2f3743; --done:#6c7586; --tsL:.78; --tsC:.13; --surface:#1e232d; --chipL0:.34; --chipDL:-.085; --chipHotFg:#161a22; --chipC0:.04; --chipDC:.028; color-scheme:dark}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:22px 22px;}
+.wrap{max-width:640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 72px;display:flex;flex-direction:column;gap:26px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--f-display);font-weight:400;font-size:34px;margin:0;letter-spacing:.02em}
+.nav{display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:13px;color:var(--muted)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:4px 8px;border-radius:6px}
+button:hover{background:var(--accent-soft)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h2{font-size:12px;letter-spacing:.12em;color:var(--muted);font-weight:600;margin:0 0 8px}
+/* day buttons */
+.bar{display:grid;grid-template-columns:repeat(7,1fr);border:2px solid var(--ink);border-radius:4px;overflow:hidden}
+.cell{aspect-ratio:1/1.1;max-width:100%;border:0;border-right:1.5px solid var(--ink);border-radius:0;padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;position:relative;font-size:15px}
+.cell:last-child{border-right:0}
+/* 色卡：--step 0..4 从浅到深 */
+.cell{--L:calc(var(--chipL0) - var(--step,0) * var(--chipDL));--C:calc(var(--chipC0) + var(--step,0) * var(--chipDC));
+  background:oklch(var(--L) var(--C) var(--h))}
+.cell.hot,.cell.hot .n{color:var(--chipHotFg)}
+.cell.hot.sel::after{background:var(--chipHotFg)}
+.cell.future{background:oklch(var(--L) calc(var(--C) * .4) var(--h));color:var(--muted)}
+.cell.today{background-image:repeating-linear-gradient(135deg,color-mix(in srgb,var(--paper) 45%,transparent) 0 5px,transparent 5px 10px)}
+.wday{color:oklch(var(--tsL) .14 var(--h))}
+.wday::after{border-top-color:oklch(var(--tsL) .14 var(--h))}
+#dayTitle{color:oklch(var(--tsL) .15 var(--h))}
+.cell .n{font-family:var(--f-mono);font-size:10px;color:var(--muted)}
+.cell.sel::after{content:"";position:absolute;left:6px;right:6px;bottom:5px;height:4px;border-radius:2px;background:var(--ink)}
+.prog-cap{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-top:6px}
+/* day page */
+.dayhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
+.dayhead h3{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0}
+.dayhead span{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.outline{display:flex;flex-direction:column}
+.b{display:grid;grid-template-columns:4.4em calc(14px + var(--ind,0) * 22px) 1fr;gap:6px;align-items:start;padding:3px 0}
+.b .t{font-family:var(--f-mono);font-size:12px;font-weight:600;padding-top:3px;font-variant-numeric:tabular-nums;position:relative;justify-self:start}
+.b .t small{font-weight:400;color:var(--muted);font-size:10px;position:absolute;left:100%;top:0;margin-left:1px}
+.b .dot{width:7px;height:7px;border-radius:50%;background:var(--ink);margin-top:9px;justify-self:end;margin-right:3.5px;position:relative;z-index:1;box-shadow:0 0 0 3px var(--paper)}
+.b.lv1 .dot,.b.lv3 .dot{background:var(--paper);border:1.5px solid var(--ink);width:4px;height:4px}
+.b.lv0 .dot{justify-self:start;margin-left:3.5px;margin-right:0}
+.b .tx{min-width:0;overflow-wrap:anywhere;white-space:pre-wrap;outline:none;border-radius:3px;padding:0 3px;min-height:1.6em}
+.b .tx:focus{background:var(--accent-soft)}
+.b .tx:empty::before{content:attr(data-ph);color:var(--muted)}
+.b.kid{position:relative}
+.newb{align-self:flex-start;color:var(--muted);font-size:14px;margin-top:6px}
+.hint{font-size:12px;color:var(--muted);margin-top:8px}
+/* toolbar while editing (phones have no Tab key) */
+.tools{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;justify-content:center;gap:4px;background:var(--paper);border-top:1.5px solid var(--line);
+  padding-top:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.tools button{font-size:14px;padding:6px 12px;border:1.5px solid var(--line)}
+/* goals */
+.goals{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.goals li{display:flex;align-items:center;gap:8px}
+.goals li.ok span{text-decoration:line-through;color:var(--done)}
+.goals input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+.goals span{flex:1;min-width:0;overflow-wrap:anywhere}
+
+.add{display:flex;gap:8px;margin-top:6px}
+.add input{flex:1;min-width:0;font:inherit;color:var(--ink);background:transparent;border:0;border-bottom:1.5px solid var(--line);padding:6px 2px}
+.add input:focus{border-color:var(--accent);outline:none}
+.add button{color:var(--accent);font-weight:600}
+textarea{width:100%;box-sizing:border-box;min-height:96px;font:inherit;color:var(--ink);background:transparent;border:1.5px dashed var(--line);border-radius:6px;padding:10px;resize:vertical}
+textarea:focus{border-color:var(--accent);outline:none}
+.dayhead h3{font-size:28px}
+.back{font-size:15px;color:var(--accent);padding-left:0}
+.wklog{display:flex;flex-direction:column}
+.wday{display:flex;align-items:center;gap:10px;margin:12px 0 2px;font-size:13px;font-weight:600}
+.wday::after{content:"";flex:1;border-top:1.5px solid var(--ink)}
+.wday:first-child{margin-top:0}
+.wrow{display:flex;gap:8px;align-items:start;padding:3px 0}
+.wrow .tx{flex:1;min-width:0;overflow-wrap:anywhere}
+.wrow .acts{display:flex;opacity:0;transition:opacity .15s}
+.wrow:hover .acts,.wrow:focus-within .acts{opacity:1}
+@media (hover:none){.wrow .acts{opacity:.55}}
+.wrow .acts button{font-size:12px;color:var(--muted);padding:2px 5px}
+.edit-in{width:100%;font:inherit;color:var(--ink);background:var(--accent-soft);border:0;border-radius:4px;padding:2px 6px}
+select{font:inherit;color:var(--ink);background:transparent;border:0;border-bottom:1.5px solid var(--line);padding:6px 2px}
+.empty{color:var(--muted);font-size:14px;padding:4px 0}
+.status{font-family:var(--f-mono);font-size:11px;color:var(--muted);text-align:right}
+body{margin:0}
+.store{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center;font-size:12px;color:var(--muted)}
+.store button{font-size:12px;border:1.5px solid var(--line)}
+
+/* 这周的事：markdown 式圆点，颜色是当天的 */
+.wrow{display:flex;gap:4px;align-items:start;padding:2px 0;border-radius:4px}
+.wdot{flex:none;width:22px;height:1.6em;display:flex;align-items:center;justify-content:center;touch-action:none}
+.wdot::before{content:"";width:7px;height:7px;border-radius:50%;background:oklch(var(--tsL) .15 var(--h))}
+.wdot.grab{cursor:grab}
+.wdot.grab:hover::before{transform:scale(1.4)}
+.wklog{position:relative}
+.wrow{position:relative}
+.wrow.dragging{z-index:3;background:var(--paper);box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 22%,transparent),0 0 0 1.5px oklch(var(--tsL) .15 var(--h));cursor:grabbing;transition:box-shadow .15s}
+.wrow.dragging.settling{box-shadow:none}
+.wrow.dragging .tx{opacity:.9}
+.drop-line{position:absolute;left:0;right:0;height:0;border-top:2px solid oklch(var(--tsL) .16 var(--h,250));opacity:0;pointer-events:none;z-index:2;transition:top .08s ease-out}
+.drop-line::before{content:"";position:absolute;left:-1px;top:-5px;width:8px;height:8px;border-radius:50%;background:oklch(var(--tsL) .16 var(--h,250))}
+.drop-line.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.drop-line{transition:none}}
+.wrow.dragging .wdot{cursor:grabbing}
+.wrow .tx{cursor:text;user-select:none}
+.wrow .tx .edit-in{user-select:text}
+/* 日记页置顶框：当天色卡作底 */
+.pin{--step:1;margin-bottom:14px;padding:10px 12px 8px;border-radius:6px;
+  background:oklch(calc(var(--chipL0) - var(--chipDL)) calc(var(--chipC0) + var(--chipDC)) var(--h));
+  border:1.5px solid oklch(calc(var(--chipL0) - 3 * var(--chipDL)) calc(var(--chipC0) + 3 * var(--chipDC)) var(--h))}
+.pin-h{font-size:12px;font-weight:600;letter-spacing:.08em;color:oklch(var(--tsL) .15 var(--h));margin-bottom:2px}
+.pin .wdot::before{background:oklch(calc(var(--tsL) - .05) .17 var(--h))}
+
+/* 叉叉：悬停在那一条上才出现 */
+.x{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border-radius:50%;color:var(--muted);opacity:0;transition:opacity .12s,color .12s,background .12s}
+.wrow:hover .x,.goals li:hover .x,.x:focus-visible{opacity:1}
+.x:hover{color:var(--ink)}
+.x.sure{opacity:1;color:#fff;background:#d64545}
+@media (hover:none){.x{opacity:.45}}
+.wrow .acts{opacity:1}
+
+/* 新增记录：显眼的输入框，边框是选中那天颜色的深色 */
+.wk-add{display:flex;align-items:center;gap:6px;background:var(--surface);border:2px solid oklch(calc(var(--tsL) - .06) .16 var(--h,250));border-radius:8px;padding:4px 6px 4px 4px;
+  box-shadow:0 2px 0 oklch(calc(var(--tsL) - .06) .16 var(--h,250) / .25)}
+.wk-add select{border:0;font-weight:600;color:oklch(calc(var(--tsL) - .06) .16 var(--h,250));padding:8px 4px 8px 8px;background:transparent}
+.wk-add input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:transparent;border:0;padding:8px 4px}
+.wk-add input:focus,.wk-add select:focus{outline:none}
+.wk-add:focus-within{box-shadow:0 0 0 3px oklch(calc(var(--tsL) - .06) .16 var(--h,250) / .25)}
+.wk-add button{font-weight:600;color:var(--surface);background:oklch(calc(var(--tsL) - .06) .16 var(--h,250));padding:7px 14px;border-radius:6px}
+.wk-add button:hover{filter:brightness(1.08);background:oklch(calc(var(--tsL) - .06) .16 var(--h,250))}
+
+/* 分组标题的横线用当天颜色（放在最后，盖过前面的通用规则） */
+.wday::after{border-top:1.5px solid oklch(var(--tsL) .14 var(--h))}
+
+/* 同步设置 */
+.sync{font-size:13px;color:var(--muted);border-top:1.5px dashed var(--line);padding-top:10px}
+.sync summary{cursor:pointer;display:flex;align-items:center;gap:8px;list-style:none;width:max-content}
+.sync summary::-webkit-details-marker{display:none}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.sync-dot.ok{background:#3aa66a}.sync-dot.err{background:#d64545}.sync-dot.off{background:transparent;border:1.5px solid var(--muted)}
+.sync form{display:flex;flex-direction:column;gap:8px;margin-top:10px;max-width:420px}
+.sync label{display:flex;align-items:center;gap:8px}
+.sync label span{width:3.5em;flex:none}
+.sync input{flex:1;min-width:0;font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:6px;padding:6px 8px}
+.sync input:focus{border-color:var(--accent);outline:none}
+.sync-acts{display:flex;gap:6px}
+.sync-acts button{border:1.5px solid var(--line);font-size:13px}
+.sync-acts button[type=submit]{background:var(--accent);color:var(--surface);border-color:var(--accent)}
+
+/* .md 里的其他段落（含冲突副本） */
+textarea.extra{font-family:var(--f-mono);font-size:12.5px;line-height:1.55;min-height:180px}
+#extraSec.conflict h2{color:#d64545}
+#extraSec.conflict textarea{border-color:#d64545;border-style:solid}
+
+/* 同步结果与顶部状态 */
+.sync-result{font-size:13px;min-height:1.4em}
+.sync-result.ok{color:#2f8a57}.sync-result.err{color:#d64545}.sync-result.busy{color:var(--muted)}
+header{position:relative}
+.sync-pill{font-size:12px;font-family:var(--f-mono);border:1.5px solid var(--line);border-radius:999px;padding:2px 10px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin-right:auto}
+.sync-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--line)}
+.sync-pill.ok::before{background:#3aa66a}
+.sync-pill.err{color:#d64545;border-color:#d64545}.sync-pill.err::before{background:#d64545}
+.sync-pill.off::before{background:transparent;border:1.5px solid var(--muted)}
+
+/* 日记时间戳：双击修改 */
+.b .t{cursor:pointer;border-radius:3px}
+.b .t:hover{background:var(--accent-soft)}
+.b .t.empty{color:var(--line);font-weight:400}
+.b:hover .t.empty{color:var(--muted)}
+.time-in{font:inherit;font-family:var(--f-mono);font-size:12px;color:var(--ink);background:var(--surface);border:1.5px solid var(--accent);border-radius:4px;padding:0 2px;width:6.2em}
+
+/* 每天的收起 */
+.wday .cnt{font-weight:400;color:var(--muted);font-size:12px}
+.wday::after{order:2}
+.wday .fold{order:3;font-size:12px;font-weight:400;color:var(--muted);padding:1px 8px;border:1px solid var(--line);border-radius:999px}
+.wday .fold:hover{color:var(--ink);background:var(--accent-soft)}
+.wday.folded{opacity:.85}
+
+/* 快速跳转 */
+.jump{display:flex;gap:14px;margin-top:8px;font-size:13px}
+.jump a{color:var(--accent);text-decoration:none;border-bottom:1px dashed currentColor}
+.jump a:hover{border-bottom-style:solid}
+#goalsSec,#reviewSec{scroll-margin-top:16px}
+
+/* 回到顶部 */
+.to-top{position:fixed;z-index:4;right:max(16px,calc(env(safe-area-inset-right,0px) + 12px));bottom:calc(20px + env(safe-area-inset-bottom,0px));
+  font-size:13px;background:var(--surface);color:var(--ink);border:1.5px solid var(--line);border-radius:999px;padding:8px 14px;
+  box-shadow:0 3px 10px color-mix(in srgb,var(--ink) 15%,transparent)}
+.to-top:hover{background:var(--accent-soft)}
+
+/* 时间线：连接顶层圆点的浅灰细线（x = 时间列 4.4em + 间距 6px + 圆点中心 7px） */
+.outline{position:relative}
+.outline::before{content:"";position:absolute;left:calc(4.4em + 6px + 7px - .5px);top:var(--tl-top,0);height:var(--tl-h,0);width:1px;background:var(--line);pointer-events:none}
+
+/* 日记的输入：当天颜色的横线 */
+.day-add{display:flex;align-items:baseline;gap:10px;margin:4px 0 14px;border-bottom:2px solid oklch(calc(var(--tsL) - .04) .15 var(--h,250));padding:4px 0}
+.day-add .now{font-family:var(--f-mono);font-size:12px;font-weight:600;width:5.5em;flex:none}
+.day-add input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:transparent;border:0;padding:4px 0}
+.day-add input:focus{outline:none}
+.day-add:focus-within{border-bottom-width:3px;margin-bottom:13px}
+
+/* 手机刘海和底部手势条：页面内容避开 */
+.wrap{padding-top:calc(20px + env(safe-area-inset-top, 0px));padding-bottom:calc(72px + env(safe-area-inset-bottom, 0px))}

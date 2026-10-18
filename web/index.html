@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>我的一周</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f3f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161a22" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="wrap" id="weekView">
+  <header>
+    <h1>我的一周</h1>
+    <button class="sync-pill" data-sync type="button"></button>
+    <div class="nav">
+      <button id="prev" aria-label="上一周">‹</button>
+      <span id="range"></span>
+      <button id="next" aria-label="下一周">›</button>
+      <button id="now" hidden>回到本周</button>
+    </div>
+  </header>
+
+  <section>
+    <div class="bar" id="bar"></div>
+    <div class="prog-cap" id="cap"></div>
+    <nav class="jump" aria-label="跳转">
+      <a href="#goalsSec" data-jump="goalsSec">周目标 ↓</a>
+      <a href="#reviewSec" data-jump="reviewSec">本周复盘 ↓</a>
+    </nav>
+  </section>
+
+  <form class="wk-add" id="wkForm">
+    <select id="wkDay" aria-label="周几"></select>
+    <input id="wkIn" placeholder="记一件这周重要的事，回车记下" autocomplete="off">
+    <button>记</button>
+  </form>
+
+  <section>
+    <h2>这周的事</h2>
+    <div class="wklog" id="wklog"></div>
+  </section>
+
+  <section id="goalsSec">
+    <h2>周目标</h2>
+    <ul class="goals" id="goals"></ul>
+    <form class="add" id="goalForm"><input id="goalIn" placeholder="加一个目标" autocomplete="off"><button>加</button></form>
+  </section>
+
+  <section id="reviewSec">
+    <h2>本周复盘</h2>
+    <textarea id="review" placeholder="写给这周的话，什么时候写都行"></textarea>
+  </section>
+
+  <section id="extraSec" hidden>
+    <h2>文件里的其他内容</h2>
+    <p class="hint" id="extraHint">.md 里四个固定标题以外的段落，原样保存。合并完冲突副本后把那一段删掉就行。</p>
+    <textarea id="extra" class="extra"></textarea>
+  </section>
+
+  <details class="sync" id="syncBox">
+    <summary><span class="sync-dot" id="syncDot"></span><span id="syncInfo">未设置同步</span></summary>
+    <form id="syncForm">
+      <label id="serverRow"><span>服务器</span><input id="syncServer" placeholder="https://你的同步服务器" autocomplete="url"></label>
+      <label><span>令牌</span><input id="syncToken" type="password" autocomplete="current-password" placeholder="部署时设置的 MYWEEK_TOKEN"></label>
+      <div class="sync-acts"><button type="submit">保存并同步</button><button type="button" id="syncNow">立即同步</button></div>
+      <div class="sync-result" id="syncResult" role="status" aria-live="polite"></div>
+    </form>
+  </details>
+
+  <div class="store">
+    <span id="storeInfo"></span>
+    <button id="linkDir">连接数据文件夹</button>
+    <button id="exportWk">导出本周</button>
+    <button id="importWk">导入</button>
+    <input type="file" id="importFile" accept=".md,text/markdown" multiple hidden>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="wrap" id="dayView" hidden>
+  <header>
+    <button class="back" id="back">‹ 这一周</button>
+    <button class="sync-pill" data-sync type="button"></button>
+    <div class="nav">
+      <button id="dPrev" aria-label="前一天">‹</button>
+      <button id="dToday">今天</button>
+      <button id="dNext" aria-label="后一天">›</button>
+    </div>
+  </header>
+  <section>
+    <div class="dayhead"><h3 id="dayTitle"></h3><span id="dayCount"></span></div>
+    <div class="pin" id="pin" hidden></div>
+    <form class="day-add" id="dayForm">
+      <span class="now" id="dayNow"></span>
+      <input id="dayIn" placeholder="现在在做什么？回车记下" autocomplete="off">
+    </form>
+    <div class="outline" id="outline"></div>
+    <div class="hint">新的记在最上面 · 在某一条里回车接着写 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删掉 · 双击时间可改</div>
+  </section>
+  <div class="status" id="status2"></div>
+</div>
+
+<button class="to-top" id="toTop" type="button" aria-label="回到顶部" hidden>↑ 顶部</button>
+
+<div class="tools" id="tools" hidden>
+  <button id="tOut" aria-label="退回">⇤ 退回</button>
+  <button id="tIn" aria-label="缩进">缩进 ⇥</button>
+  <button id="tDone">完成</button>
+</div>
+
+<script src="js/dates.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/store.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

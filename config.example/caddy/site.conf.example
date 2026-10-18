@@ -1,0 +1,6 @@
+# 服务器上已经有 Caddy 时，把这个文件放进它会 import 的目录（例如 /etc/caddy/sites/），
+# 把域名换成你自己的，然后验证并重启 Caddy。
+week.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}

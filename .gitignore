@@ -1,0 +1,16 @@
+# 个人配置（令牌、熟人名单、签名密钥、部署备忘）：它是单独的私人仓库，不进公开仓库
+/config/
+# 服务器上的日记数据
+/data/
+# 依赖和构建产物
+node_modules/
+*.apk
+# 旧版本留在根目录的文件
+/index.html
+/css/
+/js/
+/Caddyfile
+/.env
+/.env.example
+/docker-compose.override.yml
+__pycache__/

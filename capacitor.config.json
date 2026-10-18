@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.fugueh.myweek",
+  "appName": "我的一周",
+  "webDir": "web",
+  "android": {
+    "backgroundColor": "#f3f5f7"
+  }
+}
