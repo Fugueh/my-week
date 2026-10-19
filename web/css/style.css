@@ -99,6 +99,11 @@ select{font:inherit;color:var(--ink);background:transparent;border:0;border-bott
 .upd{position:fixed;left:50%;bottom:max(16px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:20;max-width:calc(100% - 32px);
   background:var(--accent);color:var(--surface);padding:8px 16px;border-radius:999px;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
 .upd:hover{background:var(--accent);filter:brightness(1.08)}
+/* App 新版本提示：左边点了去下载，右边 ✕ 这一版先不提醒 */
+.app-upd{display:flex;align-items:center;gap:2px;padding:0}
+.app-upd button{color:inherit;background:none;padding:8px 6px 8px 16px;border-radius:999px;font-size:14px;white-space:nowrap}
+.app-upd #appUpdX{padding:8px 14px 8px 8px;opacity:.8}
+.app-upd button:hover{background:none;filter:brightness(1.15)}
 body{margin:0}
 .store{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center;font-size:12px;color:var(--muted)}
 .store button{font-size:12px;border:1.5px solid var(--line)}

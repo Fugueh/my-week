@@ -631,12 +631,42 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 let lastToday = dkey(new Date());
 setInterval(() => { const t = dkey(new Date()); if (t !== lastToday && !document.activeElement?.closest?.(".b,form,textarea")) { lastToday = t; render(); } }, 60000);
 
+/* ---- App 新版本（updates.js）：开了同步的自动查（一天一次），没开同步的只在点「检查更新」时查 ---- */
+function showAppUpdate() {
+  const p = IS_APP && Updates.pending();
+  $("appUpd").hidden = !p;
+  if (p) $("appUpdGo").textContent = `新版本 v${p.version} · 点这里下载`;
+}
+const autoCheckUpdate = () => {
+  if (!IS_APP || !navigator.onLine) return;
+  Updates.check({ auto: true, syncOn: Sync.enabled() }).then(showAppUpdate).catch(() => {});   // 自动检查失败不打扰
+};
+$("checkUpd").hidden = !IS_APP;
+$("checkUpd").title = "当前版本 v" + APP_VERSION;
+$("checkUpd").onclick = async () => {
+  status("正在检查更新…");
+  try {
+    const r = await Updates.check();
+    if (r.update) { Updates.dismiss(null); showAppUpdate(); status(`有新版本 v${r.version}（来自 ${r.source}），点底部的提示下载`); }
+    else status(`已经是最新版本 v${APP_VERSION}`);
+  } catch (e) { status(e.message); }
+};
+$("appUpdGo").onclick = async () => {
+  const p = Updates.pending(); if (!p) return;
+  if (!confirm(`在浏览器里打开 ${p.source} 上的 v${p.version} 安装包。\n\n下载后直接点开安装，覆盖现在的 App，日记、草稿、同步设置都会保留。不要先卸载。\n\n如果安卓提示「签名不一致」或要求先卸载旧版，说明这个安装包不是正版，不要安装。`)) return;
+  try { await Store.flush(); } catch (e) {}
+  location.href = p.url;   // App 里打开别的网址会交给系统浏览器，不会离开 App 本身
+};
+$("appUpdX").onclick = () => { const p = Updates.pending(); if (p) Updates.dismiss(p.version); showAppUpdate(); };
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoCheckUpdate(); });
+
 /* ---- 启动 ---- */
 (function () {
   const h = location.hash;
   if (/^#d\d{4}-\d{2}-\d{2}$/.test(h)) { selDay = h.slice(2); weekStart = monday(fromKey(selDay)); view = "day"; $("weekView").hidden = true; $("dayView").hidden = false; }
   render();
   syncInfo(); Sync.soon(300);
+  showAppUpdate(); setTimeout(autoCheckUpdate, 3000);   // 等第一轮同步先跑
   Store.restoreDir().then(r => {
     if (r === "lost") status("之前选的文件夹没有权限了（可能被移动或删除），请重新「连接数据文件夹」");
     if (r === "prompt") { $("linkDir").textContent = "重新连接数据文件夹"; $("linkDir").dataset.regrant = 1; status("点“重新连接数据文件夹”继续写入文件"); }

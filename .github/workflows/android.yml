@@ -31,9 +31,17 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: 检查版本号：标签、package.json、web/js/version.js 三处一致
+        if: github.ref_type == 'tag'
+        run: |
+          V=$(node -p "require('./package.json').version")
+          [ "v$V" = "$GITHUB_REF_NAME" ] || { echo "::error::标签 $GITHUB_REF_NAME 和 package.json 的 $V 不一致"; exit 1; }
+          grep -q "APP_VERSION = \"$V\"" web/js/version.js || { echo "::error::web/js/version.js 里的 APP_VERSION 不是 $V"; exit 1; }
+
       - name: 安装依赖，把 web/ 拷进安卓工程
         run: |
           npm ci
+          npm test
           npx cap sync android
           chmod +x android/gradlew
 
