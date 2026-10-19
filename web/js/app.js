@@ -198,7 +198,10 @@ function renderWeek() {
   // 这周的事：只标周几
   const sel = $("wkDay");
   if (!sel.options.length) WD.forEach((x, i) => { const o = document.createElement("option"); o.value = i; o.textContent = "周" + x; sel.appendChild(o); });
-  if (document.activeElement !== sel && document.activeElement !== $("wkIn")) sel.value = isNowWeek ? weekday(new Date()) : 0;
+  if (document.activeElement !== sel && document.activeElement !== $("wkIn")) {
+    const d = $("wkIn").value && Drafts.get("wkIn");   // 有草稿时用草稿选的周几
+    sel.value = d && d.wd != null ? d.wd : isNowWeek ? weekday(new Date()) : 0;
+  }
   $("wkForm").style.setProperty("--h", DAY_HUE[+sel.value]);
   // 越近的日子越靠上；同一天里按你排的顺序
   const ev = [...w.events].sort((a, b) => b.wd - a.wd);
@@ -359,7 +362,7 @@ function renderDay() {
     const h = document.createElement("div"); h.className = "pin-h"; h.textContent = "这周的事 · 周" + WD[wd]; pin.appendChild(h);
     pins.forEach(e => pin.appendChild(eventRow(w, e, false)));
   }
-  // 输入框：当天颜色的横线，左边是此刻的时间
+  // 输入框：当天颜色的框，左边是此刻的时间
   $("dayForm").style.setProperty("--h", DAY_HUE[wd]); tickNow();
   // 越近越靠上：按时间倒序（子条目跟着父条目走，同一层内也倒序）
   // 正在一条条往下写（回车新起、Tab 缩进）时先不重排，离开编辑再排，免得新行跳走
@@ -367,7 +370,7 @@ function renderDay() {
   if (sorted.some((e, i) => e !== list[i])) { list.splice(0, list.length, ...sorted); Store.save(Store.forDay(selDay)); }
   const box = $("outline"); box.innerHTML = "";
   list.forEach(e => box.appendChild(bullet(e)));
-  if (!list.length) { const p = document.createElement("div"); p.className = "hint"; p.style.margin = "0"; p.textContent = "这一天还空着。在上面的横线上写一句，回车记下，会自动带上此刻的时间。"; box.appendChild(p); }
+  if (!list.length) { const p = document.createElement("div"); p.className = "hint"; p.style.margin = "0"; p.textContent = "这一天还空着。在上面的框里写一句，回车或点「记」记下，会自动带上此刻的时间。"; box.appendChild(p); }
   requestAnimationFrame(drawTimeline);
 }
 // 大纲按时间倒序重排：先按缩进还原成树，每层兄弟按时间从新到旧排，再摊平。
@@ -486,7 +489,7 @@ $("dayForm").onsubmit = ev => {
   ev.preventDefault(); const s = $("dayIn").value.trim(); if (!s) return;
   const list = dayList(selDay);
   list.unshift({ id: MD.newId(), ts: Date.now(), indent: 0, text: s });   // 最新的在最上面
-  Store.save(Store.forDay(selDay), { now: true }); $("dayIn").value = ""; render(); $("dayIn").focus();
+  Store.save(Store.forDay(selDay), { now: true }); $("dayIn").value = ""; draftChanged("dayIn"); render(); $("dayIn").focus();
 };
 const tid = () => $("tools").dataset.id;
 $("tIn").onmousedown = $("tOut").onmousedown = e => e.preventDefault();
@@ -511,14 +514,35 @@ $("wkForm").onsubmit = ev => {
   const item = { id: MD.newId(), wd, text: s };
   if (at < 0) w.events.push(item); else w.events.splice(at, 0, item);   // 新记的放在那天最上面
   const f = foldState(w.week); if (f.delete(wd)) saveFold(w.week, f);   // 记到收起的那天就自动展开
-  Store.save(w, { now: true }); $("wkIn").value = ""; render(); $("wkIn").focus();
+  Store.save(w, { now: true }); $("wkIn").value = ""; draftChanged("wkIn"); render(); $("wkIn").focus();
 };
 $("goalForm").onsubmit = ev => {
   ev.preventDefault(); const s = $("goalIn").value.trim(); if (!s) return;
   const w = Store.get(dkey(weekStart));
   w.goals.push({ id: MD.newId(), text: s, done: false });
-  Store.save(w, { now: true }); $("goalIn").value = ""; render();
+  Store.save(w, { now: true }); $("goalIn").value = ""; draftChanged("goalIn"); render();
 };
+
+/* ---- 草稿：输入框里还没记下的字，存在本机，关掉再打开还在（drafts.js） ---- */
+const DRAFT_INPUTS = ["dayIn", "wkIn", "goalIn"];
+// 有字、又没在输入时，在框里标「未记下」
+function draftTag(id) {
+  const i = $(id), tag = i.parentElement.querySelector(".draft-tag");
+  if (tag) tag.hidden = !i.value.trim() || document.activeElement === i;
+}
+function draftChanged(id) {
+  Drafts.set(id, $(id).value, id === "wkIn" ? { wd: +$("wkDay").value } : null);
+  draftTag(id);
+}
+DRAFT_INPUTS.forEach(id => {
+  const i = $(id), d = Drafts.get(id);
+  if (d && !i.value) i.value = d.text;   // 「这周的事」草稿选的周几，在 render 里设（那时周几的选项才建好）
+  i.addEventListener("input", () => draftChanged(id));
+  i.addEventListener("focus", () => draftTag(id));
+  i.addEventListener("blur", () => draftTag(id));
+  draftTag(id);
+});
+$("wkDay").addEventListener("change", () => { if ($("wkIn").value.trim()) draftChanged("wkIn"); });
 $("extra").oninput = () => { const w = Store.get(dkey(weekStart)); w.extra = $("extra").value; Store.save(w); };
 $("review").oninput = () => { const w = Store.get(dkey(weekStart)); w.review = $("review").value; Store.save(w); };
 $("prev").onclick = () => { weekStart = addDays(weekStart, -7); render(); };

@@ -211,11 +211,16 @@ header{position:relative}
 .outline::before{content:"";position:absolute;left:calc(4.4em + 6px + 7px - .5px);top:var(--tl-top,0);height:var(--tl-h,0);width:1px;background:var(--line);pointer-events:none}
 
 /* 日记的输入：当天颜色的横线 */
-.day-add{display:flex;align-items:baseline;gap:10px;margin:4px 0 14px;border-bottom:2px solid oklch(calc(var(--tsL) - .04) .15 var(--h,250));padding:4px 0}
-.day-add .now{font-family:var(--f-mono);font-size:12px;font-weight:600;width:5.5em;flex:none}
-.day-add input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:transparent;border:0;padding:4px 0}
+/* 日记输入框：和「这周的事」一样的框，边框是当天的颜色，左边是此刻的时间 */
+.day-add{display:flex;align-items:center;gap:8px;margin:4px 0 14px;background:var(--surface);border:2px solid oklch(calc(var(--tsL) - .04) .15 var(--h,250));border-radius:8px;padding:4px 6px 4px 12px}
+.day-add .now{font-family:var(--f-mono);font-size:12px;font-weight:600;flex:none;color:oklch(calc(var(--tsL) - .04) .15 var(--h,250))}
+.day-add input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:transparent;border:0;padding:8px 2px}
 .day-add input:focus{outline:none}
-.day-add:focus-within{border-bottom-width:3px;margin-bottom:13px}
+.day-add:focus-within{box-shadow:0 0 0 3px oklch(calc(var(--tsL) - .04) .15 var(--h,250) / .25)}
+.day-add button{font-weight:600;color:var(--surface);background:oklch(calc(var(--tsL) - .04) .15 var(--h,250));padding:7px 14px;border-radius:6px}
+.day-add button:hover{filter:brightness(1.08);background:oklch(calc(var(--tsL) - .04) .15 var(--h,250))}
+/* 输入框里有没记下的草稿、而且没在输入时，提示一下 */
+.draft-tag{flex:none;align-self:center;font-size:11px;font-weight:600;color:#b7791f;border:1.5px solid #d69e2e;border-radius:999px;padding:0 7px;line-height:1.6}
 
 /* 手机刘海和底部手势条：页面内容避开 */
 .wrap{padding-top:calc(20px + env(safe-area-inset-top, 0px));padding-bottom:calc(72px + env(safe-area-inset-bottom, 0px))}

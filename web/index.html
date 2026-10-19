@@ -38,6 +38,7 @@
   <form class="wk-add" id="wkForm">
     <select id="wkDay" aria-label="周几"></select>
     <input id="wkIn" placeholder="记一件这周重要的事，回车记下" autocomplete="off">
+    <span class="draft-tag" hidden>未记下</span>
     <button>记</button>
   </form>
 
@@ -49,7 +50,7 @@
   <section id="goalsSec">
     <h2>周目标</h2>
     <ul class="goals" id="goals"></ul>
-    <form class="add" id="goalForm"><input id="goalIn" placeholder="加一个目标" autocomplete="off"><button>加</button></form>
+    <form class="add" id="goalForm"><input id="goalIn" placeholder="加一个目标" autocomplete="off"><span class="draft-tag" hidden>未记下</span><button>加</button></form>
   </section>
 
   <section id="reviewSec">
@@ -124,6 +125,8 @@
     <form class="day-add" id="dayForm">
       <span class="now" id="dayNow"></span>
       <input id="dayIn" placeholder="现在在做什么？回车记下" autocomplete="off">
+      <span class="draft-tag" hidden>未记下</span>
+      <button>记</button>
     </form>
     <div class="outline" id="outline"></div>
     <div class="hint">新的记在最上面 · 在某一条里回车接着写 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删掉 · 双击时间可改</div>
@@ -156,6 +159,7 @@
 <script src="js/merge.js"></script>
 <script src="js/crypto.js"></script>
 <script src="js/history.js"></script>
+<script src="js/drafts.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/app.js"></script>

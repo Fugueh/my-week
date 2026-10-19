@@ -1,13 +1,13 @@
 {
   "name": "my-week",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "我的一周：周手帐 + 带时间戳的分点日记，一周一个 Markdown 文件",
   "license": "MIT",
   "scripts": {
     "sync": "cap sync android",
     "open": "cap open android",
-    "test": "node tests/merge.test.js && node tests/sync.test.js && node tests/sw-version.test.js",
+    "test": "node tests/merge.test.js && node tests/sync.test.js && node tests/drafts.test.js && node tests/sw-version.test.js",
     "bump-sw": "node tests/sw-version.test.js --fix"
   },
   "dependencies": {
