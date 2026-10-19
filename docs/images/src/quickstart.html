@@ -1,0 +1,157 @@
+<!doctype html>
+<!--
+  README「快速上手」两张图的底稿：左边是手机宽度的真实页面（iframe，示例数据），右边是编号说明。
+  不要直接打开这个文件，用 render.sh 生成图片：
+    bash docs/images/src/render.sh
+  它把 web/ 和这个文件拷进临时目录，起一个本地同步服务，用无头 Edge 截出 docs/images/quickstart-week.png 和 quickstart-day.png。
+  ?view=week 或 ?view=day 选哪一张。示例数据用的是「上一周」，所以什么时候重新生成都对得上日期。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>快速上手配图</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root{--paper:#f3f5f7;--ink:#1f2a44;--muted:#6b7487;--line:#cfd6e0;--accent:#3a5bd9;--badge:#e8590c}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font-family:"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif}
+  .stage{display:flex;gap:96px;padding:36px 40px 36px 64px;align-items:flex-start;width:max-content}
+  .phone{position:relative;width:390px;border:10px solid #1f2a44;border-radius:34px;overflow:hidden;background:var(--paper);box-shadow:0 10px 30px rgba(31,42,68,.18);flex:none}
+  .phone iframe{display:block;width:100%;border:0}
+  .marks{position:absolute;inset:0;pointer-events:none;overflow:visible}
+  .legend{width:420px;padding-top:8px}
+  .legend h2{font-family:"ZCOOL KuaiLe",sans-serif;font-weight:400;font-size:30px;margin:0 0 4px}
+  .legend .sub{color:var(--muted);font-size:14px;margin:0 0 22px}
+  .legend ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:16px}
+  .legend li{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}
+  .legend b{display:block;font-size:16px;margin-bottom:2px}
+  .legend span{color:#3d4760;font-size:14px;line-height:1.6}
+  .num{width:28px;height:28px;border-radius:50%;background:var(--badge);color:#fff;font:600 15px/28px "JetBrains Mono",monospace;text-align:center;box-shadow:0 0 0 3px #fff}
+  .badge{position:absolute;transform:translate(-50%,-50%)}
+  .ring{position:absolute;border:2.5px solid var(--badge);border-radius:8px}
+  .wrap-out{position:relative}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="wrap-out"><div class="phone"><iframe id="app" title="我的一周"></iframe></div><div class="marks" id="marks"></div></div>
+  <div class="legend"><h2 id="title"></h2><p class="sub" id="sub"></p><ol id="list"></ol></div>
+</div>
+<script src="/js/dates.js"></script>
+<script src="/js/markdown.js"></script>
+<script>
+const VIEW = new URLSearchParams(location.search).get("view") || "week";
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+
+/* ---- 示例数据：上一周（周一到周日都已经过去，色卡深浅才看得出来） ---- */
+const mon = addDays(monday(new Date()), -7), sun = addDays(mon, 6);
+const at = (d, h, m) => { const t = addDays(mon, d); t.setHours(h, m, 0, 0); return t.getTime(); };
+let n = 0; const id = () => "demo" + (++n).toString(36).padStart(2, "0");
+const diary = {
+  0: [[9, 0, "组会前把图重新画了一遍"], [14, 30, "组会，老师说结论部分要再收紧"], [22, 10, "睡前读了二十页书"]],
+  1: [[19, 40, "跑步 3 公里"]],
+  2: [[8, 20, "体检，空腹抽血"], [11, 0, "回实验室补跑上周的计算"], [15, 45, "和同学讨论下周的分工"], [23, 0, "今天有点累，早点睡"]],
+  3: [[10, 30, "改完简历第二版"], [20, 0, "投了第一份简历"]],
+  4: [[9, 15, "写周报"], [13, 0, "和导师过了一遍周报"], [16, 20, "投了第二、三份简历"], [18, 30, "跑步 5 公里"], [21, 0, "看了一部电影"]],
+};
+const w = { schema: 1, week: isoWeek(mon), start: dkey(mon), end: dkey(sun), updated: new Date().toISOString(),
+  goals: [{ id: id(), text: "投三份简历", done: true }, { id: id(), text: "跑步三次", done: false }, { id: id(), text: "读完一本书", done: false }],
+  events: [{ id: id(), wd: 0, text: "组会汇报进度" }, { id: id(), wd: 2, text: "体检" }, { id: id(), wd: 4, text: "交周报" }, { id: id(), wd: 6, text: "整理下周计划" }],
+  review: "这周节奏不错，简历投完了。跑步只跑了两次，下周补上。", days: {}, extra: "" };
+for (const [d, list] of Object.entries(diary)) w.days[dkey(addDays(mon, +d))] = list.map(([h, m, text]) => ({ id: id(), ts: at(+d, h, m), indent: 0, text }));
+// 周日：日记图用的那一天，带子条目、多行、补记、没写时间的
+const sunKey = dkey(sun);
+w.days[sunKey] = [
+  { id: id(), ts: at(7, 9, 5), indent: 0, text: "补记：昨晚整理完计划忘了记" },
+  { id: id(), ts: at(6, 21, 30), indent: 0, text: "复盘这一周\n简历投完了，跑步还差一次" },
+  { id: id(), ts: at(6, 15, 0), indent: 0, text: "整理下周计划" },
+  { id: id(), ts: at(6, 15, 20), indent: 1, text: "周三前把图改完" },
+  { id: id(), ts: at(6, 15, 35), indent: 1, text: "周五组会" },
+  { id: id(), ts: at(6, 10, 15), indent: 0, text: "整理这周的照片" },
+  { id: id(), ts: null, indent: 0, text: "想到就记，不写时间也行" },
+  { id: id(), ts: at(6, 8, 30), indent: 0, text: "起床，跑了 3 公里" },
+];
+try {
+  localStorage.clear();
+  localStorage.setItem("myweek:" + w.week, MD.serialize(w));
+  if (TOKEN) localStorage.setItem("myweek-sync-cfg", JSON.stringify({ server: "", token: TOKEN }));
+  if (VIEW === "day") localStorage.setItem("myweek-drafts", JSON.stringify({ dayIn: { text: "晚饭后散步", at: Date.now() } }));
+} catch (e) {}
+
+/* ---- 编号说明：sel 是 iframe 里的元素，side 是编号放在手机的哪一侧 ---- */
+const SPECS = {
+  week: {
+    title: "周记：一周一页", sub: "打开就是这一周。所有改动自动保存，联网后自动同步。",
+    url: "/", height: 1150,
+    marks: [
+      { sel: "#weekView [data-sync]", side: "left", t: "同步状态", d: "绿色是已同步，灰色是还有几周待上传，红色是出错。点一下打开同步面板和同步记录。" },
+      { sel: "#weekView .nav", side: "right", t: "翻周", d: "‹ › 切换上一周、下一周；不在本周时出现「回到本周」。" },
+      { sel: "#bar", side: "left", t: "七天色卡", d: "每天一个颜色，那天写得越多颜色越深。点哪一天就打开那天的日记。" },
+      { sel: "#wkForm", side: "left", t: "记一件这周的事", d: "左边选周几，写一句，回车或点「记」。" },
+      { sel: "#wklog", side: "left", t: "这周的事", d: "按天分组。双击改字，按住圆点上下拖动排序，某一天可以收起。" },
+      { sel: "#goalsSec", side: "left", t: "周目标", d: "勾选表示完成，双击改字。" },
+      { sel: "#reviewSec", side: "left", t: "本周复盘", d: "写给这一周的话，什么时候写都行，自动保存。" },
+      { sel: "#weekView .store", side: "right", t: "数据", d: "历史版本（被同步或合并换掉的旧版可以恢复）、导出 / 导入 .md、连接本地文件夹。" },
+    ],
+  },
+  day: {
+    title: "日记：带时间戳的分点", sub: "在周页面点某一天进来。想到什么就记一句，时间自动带上。",
+    url: "/#d" + sunKey, height: 600,
+    marks: [
+      { sel: "#back", side: "left", t: "回到这一周", d: "右上角 ‹ › 切换前一天、后一天，「今天」回到今天。" },
+      { sel: "#pin", side: "right", t: "这天的事", d: "「这周的事」里属于这一天的，置顶显示。" },
+      { sel: "#dayForm", side: "left", t: "写一句", d: "左边是此刻的时间。写完回车或点「记」，新的一条出现在最上面。" },
+      { sel: "#dayForm .draft-tag", side: "right", t: "草稿", d: "写了没记下的字存在本机，关掉 App 再打开还在，旁边标「未记下」。" },
+      { sel: "#outline .b:nth-child(1) .t", side: "left", t: "时间戳", d: "双击可以改。在别的日子补写的，时间旁标一个「补」字。" },
+      { sel: "#outline .b:nth-child(2) .tx", side: "right", t: "多行", d: "一条可以写好几行，按 Shift + 回车换行。" },
+      { sel: "#outline .b:nth-child(4)", side: "left", t: "子条目", d: "Tab 缩进、Shift + Tab 退回；手机上编辑时底部有缩进按钮。在一条里回车，接着写下一条。" },
+      { sel: "#outline .b:nth-child(7) .t", side: "left", t: "不写时间也行", d: "清空时间就是没有时间戳；按时间倒序排，越近越靠上。" },
+    ],
+  },
+};
+
+const S = SPECS[VIEW], app = document.getElementById("app");
+document.getElementById("title").textContent = S.title;
+document.getElementById("sub").textContent = S.sub;
+document.getElementById("list").innerHTML = S.marks.map((m, i) => `<li><div class="num">${i + 1}</div><div><b>${m.t}</b><span>${m.d}</span></div></li>`).join("");
+app.style.height = S.height + "px";
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+app.onload = async () => {
+  const doc = app.contentDocument, win = app.contentWindow;
+  for (let i = 0; i < 50 && !win.Sync; i++) await sleep(100);
+  if (TOKEN) { try { await win.Sync.run(); } catch (e) {} }
+  if (VIEW === "week") doc.getElementById("prev").click();   // 示例数据在上一周
+  await sleep(400);
+  doc.activeElement && doc.activeElement.blur && doc.activeElement.blur();
+  win.scrollTo(0, 0);
+  const upd = doc.getElementById("updBtn"); if (upd) upd.hidden = true;
+  place(doc);
+  document.title = "ready";
+};
+app.src = S.url;
+
+// 编号放在手机边框外侧，和元素中线对齐；元素描一个框
+function place(doc) {
+  const marks = document.getElementById("marks"), phone = document.querySelector(".phone");
+  const pr = phone.getBoundingClientRect(), base = phone.parentElement.getBoundingClientRect(), border = 10;
+  const used = { left: [], right: [] };
+  S.marks.forEach((m, i) => {
+    const el = doc.querySelector(m.sel); if (!el) { console.warn("没找到", m.sel); return; }
+    const r = el.getBoundingClientRect();
+    const x0 = pr.left - base.left + border + r.left, y0 = pr.top - base.top + border + r.top;
+    const ring = document.createElement("div"); ring.className = "ring";
+    Object.assign(ring.style, { left: x0 - 4 + "px", top: y0 - 4 + "px", width: r.width + 8 + "px", height: r.height + 8 + "px" });
+    marks.appendChild(ring);
+    let y = y0 + Math.min(r.height / 2, 18);
+    for (const u of used[m.side]) if (Math.abs(u - y) < 34) y = u + 34;   // 编号别叠在一起
+    used[m.side].push(y);
+    const x = m.side === "left" ? pr.left - base.left - 26 : pr.right - base.left + 26;
+    const b = document.createElement("div"); b.className = "num badge"; b.textContent = i + 1;
+    Object.assign(b.style, { left: x + "px", top: y + "px" });
+    marks.appendChild(b);
+  });
+}
+</script>
+</body>
+</html>
