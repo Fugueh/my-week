@@ -59,6 +59,8 @@ docker compose up -d --build  # 只监听 127.0.0.1:8000
 
 ```bash
 ./server/adduser.sh alice     # 打印出 alice 的令牌，发给她填进 App
+# 想让账号一开始就开启端到端加密：./server/adduser.sh alice --keyid 8位十六进制
+# （服务器只收到密钥指纹；密钥和恢复码要在别处生成，见 docs/E2EE-技术笔记.md）
 ```
 
 名单在 `config/users.txt`，删掉一行就停用；改了不用重启。主人的数据在 `data/`，熟人的在 `data/users/名字/`。每次覆盖前，旧版本会存进那个目录下的 `.history/`。
