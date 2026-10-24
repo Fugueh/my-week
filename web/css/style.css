@@ -58,6 +58,11 @@ h2{font-size:12px;letter-spacing:.12em;color:var(--muted);font-weight:600;margin
 .b.lv0 .dot{justify-self:start;margin-left:3.5px;margin-right:0}
 .b .tx{min-width:0;overflow-wrap:anywhere;white-space:pre-wrap;outline:none;border-radius:3px;padding:0 3px;min-height:1.6em}
 .b .tx:focus{background:var(--accent-soft)}
+/* 日记条目的删除叉叉：点进去编辑这一条时才出现，贴在右上角 */
+.b .body{position:relative}
+.b .body > .x{position:absolute;top:1px;right:0;display:none}
+.b:focus-within .body > .x{display:inline-flex;opacity:1}
+.b:focus-within .tx{padding-right:28px}
 .b .tx:empty::before{content:attr(data-ph);color:var(--muted)}
 .b.kid{position:relative}
 .newb{align-self:flex-start;color:var(--muted);font-size:14px;margin-top:6px}
@@ -280,17 +285,19 @@ header{position:relative}
 .imgs,.pend{display:flex;flex-wrap:wrap;gap:8px}
 .imgs{padding:4px 3px 2px}
 .pend{margin:6px 0 14px}
-.th{position:relative;width:84px;height:84px;flex:none}
-.pend .th{width:72px;height:72px}
+.th{position:relative;flex:0 0 clamp(64px,calc((100% - 16px) / 3),96px);aspect-ratio:1;align-self:flex-start}   /* 窄屏一行至少 3 张，宽屏最大 96px，放不下的自动换行 */
+.pend .th{flex-basis:clamp(56px,calc((100% - 16px) / 3),72px)}
 .th img,.th .miss{width:100%;height:100%;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--surface);cursor:zoom-in;display:block}
 .th img:not([src]){visibility:hidden}
 .th .miss{display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted);padding:4px;cursor:default;box-sizing:border-box}
 .th.loading img{filter:brightness(.35);cursor:default}
+.th.failed img{filter:brightness(.4) sepia(1) hue-rotate(-35deg) saturate(3)}
+.th.failed .ld{background:rgba(160,30,30,.45);border-radius:6px}
 .th .ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.6)}
 .th .x{position:absolute;top:-7px;right:-7px;width:22px;height:22px;padding:0;border-radius:50%;border:1.5px solid var(--paper);background:var(--ink);color:var(--paper);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .th .x{opacity:1}
 .b .th .x{display:none}
-.b:focus-within .th .x,.b .th.loading .x{display:flex}   /* 已保存的图：编辑这一条时才显示 × */
+.b:focus-within .th .x,.b .th.loading .x,.b .th.failed .x{display:flex}   /* 已保存的图：编辑这一条时才显示 × */
 .day-add button.pic{background:transparent;color:oklch(calc(var(--tsL) - .04) .15 var(--h,250));padding:6px 8px;display:flex;align-items:center}
 .day-add button.pic:hover{background:var(--accent-soft)}
 .viewer{border:0;padding:0;margin:0;max-width:none;max-height:none;width:100vw;height:100vh;height:100dvh;background:rgba(0,0,0,.92);color:#fff}

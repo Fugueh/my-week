@@ -448,23 +448,29 @@ function bullet(e) {
     if (!document.activeElement?.closest?.(".b,.tools")) { $("tools").hidden = true; dirty = false; holdSort = false; render(); }
   }, 150);
   const body = document.createElement("div"); body.className = "body"; body.appendChild(tx);
+  // 删除这一条：点进去编辑时才出现；点一下变红，再点一下删除（有子条目的连它们一起删，图片也一起删）
+  const list = dayList(selDay), at = list.findIndex(x => x.id === e.id), hasKids = at >= 0 && list[at + 1] && list[at + 1].indent > e.indent;
+  const del = xButton(() => deleteEntry(e.id)); del.title = hasKids ? tr("删除这一条（连同下面的子条目）") : tr("删除这一条");
+  body.appendChild(del);
   if (e.img || loading.some(j => j.target === e.id)) body.appendChild(thumbs(e));   // 正在解码的图也要显示出来（这一条原来还没有图时也一样）
   r.append(ts, dot, body); return r;
 }
 
 /* ---- 日记图片：缩略图、加图、点开看大图 ---- */
-// 一张缩略图：右上角 × 删除；loading 时调暗并盖「解码中」
-function thumbBox({ src, loading, onOpen, onDel }) {
-  const w = document.createElement("div"); w.className = "th" + (loading ? " loading" : "");
+// 一张缩略图：右上角 × 删除；loading 时调暗并盖「解码中」；fail 是失败原因（盖「没加上」，鼠标放上去能看到原因）
+function thumbBox({ src, loading, fail, onOpen, onDel }) {
+  const w = document.createElement("div"); w.className = "th" + (loading ? " loading" : "") + (fail ? " failed" : "");
+  if (fail) w.title = fail;
   const im = document.createElement("img"); im.alt = tr("日记图片"); if (src) im.src = src; if (onOpen) im.onclick = onOpen;
   w.appendChild(im);
-  if (loading) { const l = document.createElement("span"); l.className = "ld"; l.textContent = tr("解码中"); w.appendChild(l); }
+  if (loading) { const l = document.createElement("span"); l.className = "ld"; l.textContent = fail ? tr("没加上") : tr("解码中"); w.appendChild(l); }
   const x = document.createElement("button"); x.type = "button"; x.className = "x"; x.textContent = "×"; x.setAttribute("aria-label", tr("删除这张图片"));
   x.onmousedown = ev => ev.preventDefault();   // 别让正在写的那条失去焦点
   x.onclick = ev => { ev.stopPropagation(); onDel(); };
   w.appendChild(x); return w;
 }
-let loading = [];   // 正在解码的图：{ f, url, target（条目 ID，null 是输入框）, day, cancelled }
+let loading = [];   // 正在解码的图：{ f, url, target（条目 ID，null 是输入框）, day, cancelled, failed（失败原因，留在原地等用户点 × 去掉）}
+const decoding = j => !j.failed;
 function thumbs(e) {
   const box = document.createElement("div"); box.className = "imgs";
   (e.img || "").split(",").filter(Boolean).forEach(id => {
@@ -481,7 +487,7 @@ function thumbs(e) {
   loading.filter(j => j.target === e.id).forEach(j => box.appendChild(loadingBox(j)));
   return box;
 }
-const loadingBox = j => thumbBox({ src: j.url, loading: true, onDel: () => { j.cancelled = true; loading = loading.filter(x => x !== j); j.target == null ? renderPend() : render(); } });
+const loadingBox = j => thumbBox({ src: j.url, loading: true, fail: j.failed, onDel: () => { j.cancelled = true; loading = loading.filter(x => x !== j); URL.revokeObjectURL(j.url); j.target == null ? renderPend() : render(); } });
 let viewing = null, picTarget = null, pend = [];
 function openViewer(e, id) {
   Img.url(id, false).then(u => {
@@ -530,20 +536,26 @@ function renderPend() {
 $("dayPic").onclick = () => { picTarget = null; $("picFile").click(); };
 $("tPic").onmousedown = ev => ev.preventDefault();
 $("tPic").onclick = () => { picTarget = tid(); $("picFile").click(); };
-// 选好图后：马上显示调暗的预览和「解码中」，一张张解码（同时解大图容易把手机内存撑爆），好了换成缩略图
+// 选好图后：马上显示调暗的预览和「解码中」，好了换成缩略图。
+// 全局排队，一次只解一张（几张大图同时解会把手机内存撑爆）；失败的不悄悄消失，留一个标着「没加上」的格子，原因放在鼠标提示和状态栏里。
+let decodeChain = Promise.resolve();
 async function addPicked(files, target) {
   const day = selDay, jobs = files.map(f => ({ f, url: URL.createObjectURL(f), target, day, cancelled: false }));
   loading.push(...jobs); const redraw = () => (target == null ? renderPend() : render()); redraw();
   for (const j of jobs) {
     if (!j.cancelled) {
       try {
-        const id = await Img.add(j.f);
+        const run = decodeChain.then(() => Img.add(j.f)); decodeChain = run.catch(() => {});
+        const id = await run;
         if (j.cancelled) Img.remove(id);   // 解码中被取消的，刚存下的也删掉
         else {
           if (target == null) pend.push(id);
           else { const en = dayList(day).find(x => x.id === target); if (en) { en.img = [en.img, id].filter(Boolean).join(","); Store.save(Store.forDay(day), { now: true }); } }
         }
-      } catch (err) { if (!j.cancelled) status(tr("图片没加上：{0}", err.message)); }
+      } catch (err) {
+        console.error("[图片]", j.f.name, j.f.type, j.f.size, err);
+        if (!j.cancelled) { j.failed = err.message; status(tr("图片没加上：{0}", err.message)); redraw(); continue; }   // 留在原地，用户点 × 才去掉
+      }
     }
     loading = loading.filter(x => x !== j); URL.revokeObjectURL(j.url); redraw();
   }
@@ -577,6 +589,14 @@ function editTime(e, el) {
   };
   i.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); fin(true); } if (ev.key === "Escape") fin(false); };
   i.onblur = () => fin(true);
+}
+// 删掉一条日记：连同它下面的子条目；里面的图片也一起删（本机、服务器和别的设备上的）
+function deleteEntry(id) {
+  const list = dayList(selDay), idx = list.findIndex(x => x.id === id); if (idx < 0) return;
+  let end = idx + 1; while (end < list.length && list[end].indent > list[idx].indent) end++;
+  list.splice(idx, end - idx).forEach(g => (g.img || "").split(",").filter(Boolean).forEach(i => Img.remove(i)));
+  Store.save(Store.forDay(selDay), { now: true });
+  $("tools").hidden = true; dirty = false; holdSort = false; render();
 }
 function focusId(id) {
   const el = document.querySelector(`.b[data-id="${id}"] .tx`); if (!el) return; el.focus();
@@ -614,8 +634,8 @@ function keys(ev, e, tx) {
   }
 }
 $("dayForm").onsubmit = ev => {
-  ev.preventDefault(); const s = $("dayIn").value.trim(); if (!s && !pend.length && !loading.some(j => j.target == null)) return;
-  if (loading.some(j => j.target == null)) { status(tr("图片还在解码，好了再记")); return; }
+  ev.preventDefault(); const s = $("dayIn").value.trim(); if (!s && !pend.length && !loading.some(j => j.target == null && decoding(j))) return;
+  if (loading.some(j => j.target == null && decoding(j))) { status(tr("图片还在解码，好了再记")); return; }
   const list = dayList(selDay);
   list.unshift({ id: MD.newId(), ts: Date.now(), indent: 0, text: s, img: pend.join(",") });   // 最新的在最上面
   pend = []; renderPend();

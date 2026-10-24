@@ -58,7 +58,7 @@ const Img = (() => {
         forget(id); forget(id + "t");
         addToQueue(id);   // 开了同步就传到服务器
         return id;
-      } catch (e) { last = e; await sleep(400 * (i + 1)); }
+      } catch (e) { last = e; if (e.ours && i >= 1) break; await sleep(400 * (i + 1)); }   // 三种解码都失败的（多半不是图片）只多试一次
       finally { if (bmp && bmp.close) bmp.close(); }
     }
     throw last.ours ? last : new Error(tr("图片解不开（{0}）：{1}", file.type || tr("未知格式"), last.message));

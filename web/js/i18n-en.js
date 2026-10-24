@@ -51,6 +51,8 @@ const EN = {
   "换一个文件夹": "Change folder",
   "拖动排序": "Drag to reorder",
   "删除": "Delete",
+  "删除这一条": "Delete this entry",
+  "删除这一条（连同下面的子条目）": "Delete this entry (and the sub-entries under it)",
   "再点一下删除": "Tap again to delete",
   // 日记页面
   "这周的事": "This week's events",
@@ -61,6 +63,7 @@ const EN = {
   "写点什么": "Write something",
   "日记图片": "Diary photo",
   "解码中": "Decoding",
+  "没加上": "Failed",
   "删除这张图片": "Remove this photo",
   "删除这张图片？其他设备和服务器上的这张图也会一起删掉，无法恢复。": "Delete this photo? It will also be deleted from your other devices and the server, and can't be recovered.",
   "图片不在这台设备上": "Photo isn't on this device",

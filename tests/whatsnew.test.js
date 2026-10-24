@@ -14,6 +14,10 @@ const T = [
   ["从没有这个功能的老版本升级上来（有数据、没记录）：弹", () => { const { W } = open(null); const r = W.pending("0.4.0", true); return r.length === 1 && r[0].version === "0.4.0"; }],
   ["上次看到 0.3.2，现在 0.4.0：弹 0.4.0 的说明", () => { const { W } = open("0.3.2"); const r = W.pending("0.4.0", true); return r.length === 1 && r[0].items.length > 0; }],
   ["已经看过这一版：不弹", () => { const { W } = open("0.4.0"); return W.pending("0.4.0", true).length === 0; }],
+  ["小版本更新（没写新说明）：看过 0.4.0 的不再弹；从更老的版本直接升到 0.4.1 的还是弹 0.4.0 的说明", () => {
+    const a = open("0.4.0"), b = open("0.3.2");
+    return a.W.pending("0.4.1", true).length === 0 && b.W.pending("0.4.1", true).map(n => n.version).join() === "0.4.0";
+  }],
   ["版本比较按数字：0.10.0 比 0.9.0 新", () => { const { W } = open("0.4.0"); return W.cmp("0.10.0", "0.9.0") > 0 && W.cmp("0.4.0", "0.4.0") === 0 && W.cmp("0.3.9", "0.4.0") < 0; }],
   ["跳过了几版：中间的都弹，新的在前；比现在还新的不弹", () => {
     const { W } = open("0.3.2");
