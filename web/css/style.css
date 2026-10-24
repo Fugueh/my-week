@@ -133,13 +133,16 @@ body{margin:0}
 .pin-h{font-size:12px;font-weight:600;letter-spacing:.08em;color:oklch(var(--tsL) .15 var(--h));margin-bottom:2px}
 .pin .wdot::before{background:oklch(calc(var(--tsL) - .05) .17 var(--h))}
 
-/* 叉叉：悬停在那一条上才出现 */
+/* 叉叉：只在修改这一条时出现（见下面 .editing 的规则） */
 .x{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border-radius:50%;color:var(--muted);opacity:0;transition:opacity .12s,color .12s,background .12s}
 .wrow:hover .x,.goals li:hover .x,.x:focus-visible{opacity:1}
 .x:hover{color:var(--ink)}
 .x.sure{opacity:1;color:#fff;background:#d64545}
 @media (hover:none){.x{opacity:.45}}
 .wrow .acts{opacity:1}
+/* 条目的删除叉叉：平时不显示，双击进入修改时才出现 */
+.wrow .x,.goals li .x{display:none}
+.wrow.editing .x,.goals li.editing .x{display:inline-flex;opacity:1}
 
 /* 新增记录：显眼的输入框，边框是选中那天颜色的深色 */
 .wk-add{display:flex;align-items:center;gap:6px;background:var(--surface);border:2px solid oklch(calc(var(--tsL) - .06) .16 var(--h,250));border-radius:8px;padding:4px 6px 4px 4px;
@@ -258,6 +261,10 @@ header{position:relative}
 .hist-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .hist-head b{font-size:15px}
 .hist .hint{margin:6px 0 10px}
+#newTitle{color:var(--accent)}
+#newDlg .sync-acts{justify-content:flex-end}
+.new-ver{margin:10px 0 2px;font-weight:600;font-size:13px}
+.new-list{margin:4px 0 12px;padding-left:1.7em;line-height:1.7;font-size:14px}
 .hist-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .hist-list button{width:100%;text-align:left;display:flex;flex-wrap:wrap;gap:4px 10px;border:1.5px solid var(--line);padding:6px 10px}
 .hist-list time{font-family:var(--f-mono)}
@@ -267,3 +274,27 @@ header{position:relative}
 .hist-view{display:flex;flex-direction:column;gap:8px}
 .hist-meta{color:var(--muted)}
 .hist-text{margin:0;max-height:50vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--f-mono);font-size:12px;background:var(--paper);border:1.5px solid var(--line);border-radius:6px;padding:8px 10px}
+
+/* 日记图片：缩略图、待发送的图、全屏查看 */
+.b .body{min-width:0}
+.imgs,.pend{display:flex;flex-wrap:wrap;gap:8px}
+.imgs{padding:4px 3px 2px}
+.pend{margin:6px 0 14px}
+.th{position:relative;width:84px;height:84px;flex:none}
+.pend .th{width:72px;height:72px}
+.th img,.th .miss{width:100%;height:100%;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--surface);cursor:zoom-in;display:block}
+.th img:not([src]){visibility:hidden}
+.th .miss{display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted);padding:4px;cursor:default;box-sizing:border-box}
+.th.loading img{filter:brightness(.35);cursor:default}
+.th .ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.th .x{position:absolute;top:-7px;right:-7px;width:22px;height:22px;padding:0;border-radius:50%;border:1.5px solid var(--paper);background:var(--ink);color:var(--paper);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.th .x{opacity:1}
+.b .th .x{display:none}
+.b:focus-within .th .x,.b .th.loading .x{display:flex}   /* 已保存的图：编辑这一条时才显示 × */
+.day-add button.pic{background:transparent;color:oklch(calc(var(--tsL) - .04) .15 var(--h,250));padding:6px 8px;display:flex;align-items:center}
+.day-add button.pic:hover{background:var(--accent-soft)}
+.viewer{border:0;padding:0;margin:0;max-width:none;max-height:none;width:100vw;height:100vh;height:100dvh;background:rgba(0,0,0,.92);color:#fff}
+.viewer[open]{display:flex;align-items:center;justify-content:center}
+.viewer img{max-width:100%;max-height:100%;object-fit:contain}
+.viewer-bar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:10px;padding:12px}
+.viewer-bar button{font-size:15px;padding:8px 16px;border-radius:8px;border:1.5px solid rgba(255,255,255,.5);background:rgba(0,0,0,.5);color:#fff}

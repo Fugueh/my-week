@@ -28,14 +28,14 @@ const Updates = (() => {
 
   // 发 GET。App 里走原生网络（不受浏览器跨域限制），否则用 fetch。返回解析好的 JSON
   async function getJson(url) {
-    const late = new Promise((_, no) => setTimeout(() => no(new Error("超时")), TIMEOUT));
+    const late = new Promise((_, no) => setTimeout(() => no(new Error(tr("超时"))), TIMEOUT));
     const Http = typeof window !== "undefined" && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp;
     const go = Http
       ? Http.get({ url, headers: { Accept: "application/json" }, connectTimeout: TIMEOUT, readTimeout: TIMEOUT }).then(r => {
-          if (r.status !== 200) throw new Error("返回 " + r.status);
+          if (r.status !== 200) throw new Error(tr("返回 {0}", r.status));
           return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
         })
-      : fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" }).then(r => { if (!r.ok) throw new Error("返回 " + r.status); return r.json(); });
+      : fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" }).then(r => { if (!r.ok) throw new Error(tr("返回 {0}", r.status)); return r.json(); });
     return Promise.race([go, late]);
   }
 
@@ -45,11 +45,11 @@ const Updates = (() => {
     for (const s of SOURCES) {
       try {
         const r = await get(s.url), a = (r.assets || []).find(x => x && x.name === ASSET);
-        if (!r.tag_name || !a || !a.browser_download_url) throw new Error("发布里没有 " + ASSET);
+        if (!r.tag_name || !a || !a.browser_download_url) throw new Error(tr("发布里没有 {0}", ASSET));
         return { version: String(r.tag_name).replace(/^v/i, ""), url: a.browser_download_url, source: s.name };
-      } catch (e) { errs.push(`${s.name}：${e.message}`); }
+      } catch (e) { errs.push(tr("{0}：{1}", s.name, e.message)); }
     }
-    throw new Error("查不到新版本（" + errs.join("；") + "）");
+    throw new Error(tr("查不到新版本（{0}）", errs.join(tr("；"))));
   }
 
   // auto=true：自动检查，只给开了同步的用户，一天最多一次。返回 { update, version, url, source } 或 null（这次没查）

@@ -20,6 +20,13 @@
   WEB_DIR        页面目录，默认 /app/web
   PORT           默认 8000
   KEEP_HISTORY   每周保留多少份历史，默认 50
+  MAX_IMAGE      单张图片最大字节数，默认 4 MB
+  IMAGE_QUOTA    每个人图片总量上限，默认 500 MB
+
+图片
+  /api/images/<id>：PUT 上传、GET 下载、DELETE 删除，存在账号目录的 images/ 里。
+  图片是二进制，不进周文件；DELETE 就是真删，不进 .history，不留副本。
+  开了端到端加密的账号只收密文（以 MYWEEK-E2EE/1 开头）。
 """
 import hashlib, hmac, json, mimetypes, os, re, shutil, sys, time
 from http import HTTPStatus
@@ -33,6 +40,8 @@ DATA = Path(os.environ.get("DATA_DIR", "/data"))
 WEB = Path(os.environ.get("WEB_DIR", "/app/web")).resolve()
 PORT = int(os.environ.get("PORT", "8000"))
 KEEP = int(os.environ.get("KEEP_HISTORY", "50"))
+MAX_IMAGE = int(os.environ.get("MAX_IMAGE", str(4 << 20)))
+IMAGE_QUOTA = int(os.environ.get("IMAGE_QUOTA", str(500 << 20)))
 USERS_FILE = Path(os.environ.get("USERS_FILE", "/config/users.txt"))
 NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 _users = {"mtime": None, "map": {}}  # 令牌 -> 名字
@@ -54,6 +63,7 @@ def users() -> dict:
         _users.update(mtime=m, map=mp)
     return _users["map"]
 WEEK_RE = re.compile(r"^\d{4}-W\d{2}$")
+IMAGE_RE = re.compile(r"^[A-Za-z0-9-]{4,48}$")  # 图片 ID；缩略图是 ID 后面加一个 t
 MAX_BODY = 1 << 20  # 1 MB 一周，足够了
 lock = Lock()       # 单用户，一把锁保证"检查版本 + 写入"是原子的
 
@@ -106,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         # 允许本地打开的页面（file:// 或 localhost）也能同步；数据靠令牌保护
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match")
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Expose-Headers", "ETag")
 
     def authed(self):
@@ -148,6 +158,9 @@ class Handler(BaseHTTPRequestHandler):
                 if WEEK_RE.match(f.stem):
                     out.append({"week": f.stem, "version": version(f.read_bytes())})
             return self.send(200, {"weeks": out})
+        m = re.match(r"^/api/images/([^/]+)$", path)
+        if m:
+            return self.get_image(m.group(1))
         m = re.match(r"^/api/weeks/([^/]+)$", path)
         if m:
             base = self.authed()
@@ -169,6 +182,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/meta":
             return self.put_meta()
+        m = re.match(r"^/api/images/([^/]+)$", path)
+        if m:
+            return self.put_image(m.group(1))
         m = re.match(r"^/api/weeks/([^/]+)$", path)
         if not m:
             return self.send(404, {"error": "没有这个地址"})
@@ -206,6 +222,75 @@ class Handler(BaseHTTPRequestHandler):
                 tmp.write_bytes(body)
                 os.replace(tmp, f)  # 原子替换，写到一半断电也不会坏文件
         return self.send(200, {"week": wid, "version": version(body)}, headers={"ETag": version(body)})
+
+    def do_DELETE(self):
+        m = re.match(r"^/api/images/([^/]+)$", urlparse(self.path).path)
+        if not m:
+            return self.send(404, {"error": "没有这个地址"})
+        base = self.authed()
+        if not base:
+            return
+        iid = m.group(1)
+        if not IMAGE_RE.match(iid):
+            return self.send(400, {"error": "图片 ID 格式不对"})
+        with lock:
+            try:
+                (base / "images" / iid).unlink()  # 真删：不进 .history，不留副本
+            except FileNotFoundError:
+                pass  # 本来就没有，也算删好了（重复删除没有副作用）
+        return self.send(200, {"deleted": iid})
+
+    def get_image(self, iid):
+        base = self.authed()
+        if not base:
+            return
+        if not IMAGE_RE.match(iid):
+            return self.send(400, {"error": "图片 ID 格式不对"})
+        try:
+            data = (base / "images" / iid).read_bytes()
+        except FileNotFoundError:
+            return self.send(404, {"error": "没有这张图片"})
+        ctype = "application/octet-stream" if data.startswith(b"MYWEEK-E2EE/1 ") else "image/jpeg"
+        return self.send(200, data, ctype, {"Cache-Control": "private, no-store"})
+
+    def drain(self, n):
+        """把没打算收的请求体读掉再回错误：不然客户端还在发的时候连接被关，看到的是网络错误而不是 413 / 400。"""
+        left = min(n, 32 << 20)
+        while left > 0:
+            chunk = self.rfile.read(min(left, 65536))
+            if not chunk:
+                break
+            left -= len(chunk)
+
+    def put_image(self, iid):
+        base = self.authed()
+        if not base:
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        if not IMAGE_RE.match(iid):
+            self.drain(n)
+            return self.send(400, {"error": "图片 ID 格式不对"})
+        if n > MAX_IMAGE:
+            self.drain(n)
+            return self.send(413, {"error": "图片太大了"})
+        body = self.rfile.read(n)
+        sealed = body.startswith(b"MYWEEK-E2EE/1 ")
+        if read_meta(base).get("e2ee"):
+            if not sealed:
+                return self.send(422, {"error": "这个账号开了端到端加密，服务器不收明文图片"})
+        elif not (sealed or body.startswith(b"\xff\xd8\xff")):
+            return self.send(415, {"error": "只收 JPEG 图片"})
+        d = base / "images"
+        with lock:
+            d.mkdir(parents=True, exist_ok=True)
+            f = d / iid
+            used = sum(p.stat().st_size for p in d.iterdir() if p.is_file() and p != f)
+            if used + len(body) > IMAGE_QUOTA:
+                return self.send(507, {"error": "图片总量超过了这个账号的上限"})
+            tmp = d / (iid + ".tmp")
+            tmp.write_bytes(body)
+            os.replace(tmp, f)  # 原子替换
+        return self.send(200, {"image": iid, "size": len(body)})
 
     def put_meta(self):
         base = self.authed()

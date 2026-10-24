@@ -33,3 +33,9 @@ function hueAt(h) {
   return [265, .45];
 }
 const tsColor = d => { const [h, c] = hueAt(d.getHours() + d.getMinutes() / 60); return `oklch(var(--tsL) calc(var(--tsC) * ${c.toFixed(3)}) ${h.toFixed(1)})`; };
+
+// 界面上的星期和日期（随界面语言；.md 文件里的写法不变，见 markdown.js）
+const WD_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], MON_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayName = i => LANG === "en" ? WD_EN[i] : "周" + WD[i];       // 周一 / Mon
+const dayShort = i => LANG === "en" ? WD_EN[i] : WD[i];              // 一 / Mon
+const monthDay = d => LANG === "en" ? `${MON_EN[d.getMonth()]} ${d.getDate()}` : `${d.getMonth() + 1}月${d.getDate()}日`;   // 10月24日 / Oct 24

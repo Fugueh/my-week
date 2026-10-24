@@ -62,9 +62,11 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          VERSION_CODE: ${{ github.run_number }}
+          RUN_NUMBER: ${{ github.run_number }}
           VERSION_NAME: ${{ github.ref_type == 'tag' && github.ref_name || format('0.0.{0}-dev', github.run_number) }}
         run: |
+          # 版本号 = 运行序号 + 100：本机自己出的测试包用 1–99，永远比 CI 的正式包小，装了测试包也能被正式包覆盖更新（安卓不允许版本号变小）
+          export VERSION_CODE=$((RUN_NUMBER + 100))
           if [ -n "$ANDROID_KEYSTORE_FILE" ]; then
             ./gradlew --no-daemon assembleRelease
             cp app/build/outputs/apk/release/app-release.apk ../my-week.apk

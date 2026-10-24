@@ -29,7 +29,7 @@ const Store = (() => {
   }
   function writeLocal(w) {
     try { if (isEmpty(w)) localStorage.removeItem(PREFIX + w.week); else localStorage.setItem(PREFIX + w.week, MD.serialize(w)); }
-    catch (e) { onStatus("浏览器存储写不进去：" + e.message); }
+    catch (e) { onStatus(tr("浏览器存储写不进去：{0}", e.message)); }
   }
 
   function get(startKey) {
@@ -55,11 +55,11 @@ const Store = (() => {
             const f = await dir.read(name), fresh = MD.parse(f.text);
             Snap.keep(w.week, MD.serialize(w), "folder");      // 页面上没写进去的那份留个快照
             cache.set(w.week, fresh); seen.set(w.week, f.lastModified); writeLocal(fresh);
-            onStatus(`${name} 在别处被改过，已重新读入（页面上刚才的改动没有写进去）`); onChange(); return;
+            onStatus(tr("{0} 在别处被改过，已重新读入（页面上刚才的改动没有写进去）", name)); onChange(); return;
           }
           seen.set(w.week, await dir.write(name, MD.serialize(w)));
-          onStatus("已存到 " + name);
-        } catch (e) { onStatus("文件没写成：" + e.message); }
+          onStatus(tr("已存到 {0}", name));
+        } catch (e) { onStatus(tr("文件没写成：{0}", e.message)); }
       }
       if (!flushed) keepEdit(w.week);
       writeLocal(w); onSaved(w.week);
@@ -150,7 +150,7 @@ const Store = (() => {
         if (changed && prev && !isEmpty(prev)) Snap.keep(w.week, MD.serialize(prev), "folder");
         cache.set(w.week, w); seen.set(w.week, f.lastModified); writeLocal(w);
         if (changed) { n++; onDirty(w.week); onSaved(w.week); }   // 在编辑器里改过的，也要同步上去
-      } catch (e) { onStatus(`${name} 读不懂：${e.message}`); }
+      } catch (e) { onStatus(tr("{0} 读不懂：{1}", name, e.message)); }
     }
     if (!quiet) {   // 本机存储里有、文件夹里没有的周，补写成文件
       loadAllLocal();
@@ -220,7 +220,7 @@ const Store = (() => {
     let n = 0;
     for (const f of files) {
       try { const w = MD.parse(await f.text()); if (merge(w)) { n++; if (dir) await save(cache.get(w.week), { now: true }); } }
-      catch (e) { onStatus(`${f.name} 读不懂：${e.message}`); }
+      catch (e) { onStatus(tr("{0} 读不懂：{1}", f.name, e.message)); }
     }
     onChange(); return n;
   }

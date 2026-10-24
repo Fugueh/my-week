@@ -81,7 +81,7 @@ const Merge = (() => {
     const dayKeys = new Set([...Object.keys(local.days), ...Object.keys(server.days), ...(B ? Object.keys(B.days) : [])]);
     [...dayKeys].sort().forEach(k => {
       const merged = mergeList(B ? (B.days[k] || []) : null, local.days[k] || [], server.days[k] || [],
-        ["text", "ts", "indent"], () => "日记 " + k.slice(5), overwritten);
+        ["text", "ts", "indent", "img"], () => "日记 " + k.slice(5), overwritten);
       if (merged.length || server.days[k] || local.days[k]) out.days[k] = merged;
     });
 

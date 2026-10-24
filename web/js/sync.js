@@ -29,13 +29,13 @@ const Sync = (() => {
   async function api(path, opts = {}) {
     const ctl = typeof AbortController === "function" ? new AbortController() : null;
     let t;
-    const late = new Promise((_, rej) => { t = setTimeout(() => { if (ctl) ctl.abort(); rej(new Error(`服务器 ${TIMEOUT / 1000} 秒没有响应`)); }, TIMEOUT); });
+    const late = new Promise((_, rej) => { t = setTimeout(() => { if (ctl) ctl.abort(); rej(new Error(tr("服务器 {0} 秒没有响应", TIMEOUT / 1000))); }, TIMEOUT); });
     try {
       const r = await Promise.race([fetch(base() + path, {
         ...opts, cache: "no-store", signal: ctl ? ctl.signal : undefined,
         headers: { Authorization: "Bearer " + cfg.token, ...(opts.headers || {}) },
       }), late]);
-      if (r.status === 401) throw new Error("令牌不对");
+      if (r.status === 401) throw new Error(tr("令牌不对"));
       return r;
     } finally { clearTimeout(t); }
   }
@@ -72,18 +72,18 @@ const Sync = (() => {
   async function pull(id) {
     const r = await api("/api/weeks/" + id);
     if (r.status === 404) return;
-    if (!r.ok) throw new Error("拉取失败 " + r.status);
+    if (!r.ok) throw new Error(tr("拉取失败 {0}", r.status));
     const blob = await r.text(), ver = r.headers.get("ETag");
     if (Store.pending(id) || meta(id).dirty) return;          // 拉的过程中又改了，下轮再说
     const plain = E2EE.isEncrypted(blob);
     let w;
     try { w = MD.parse(plain ? await E2EE.decrypt(blob, id) : blob); }
-    catch (e) { const t = `服务器上的 ${id} 读不出来（${e.message}），这一周先跳过，其他照常同步`; notes.push(t); log("warn", t, id); return; }
+    catch (e) { const t = tr("服务器上的 {0} 读不出来（{1}），这一周先跳过，其他照常同步", id, e.message); notes.push(t); log("warn", t, id); return; }
     await Store.replace(w, "pull");
     setBaseText(id, plain ? await E2EE.decrypt(blob, id) : blob);
     // 账号开了加密，服务器上却还是明文（开启加密前留下的）：标成要推，下一步就会加密覆盖掉
     setMeta(id, { base: ver, dirty: acct.e2ee && !plain }); tally.pulled++;
-    log("pull", `下载了 ${id}`, id);
+    log("pull", tr("下载了 {0}", id), id);
   }
 
   async function push(id, attempt = 0) {
@@ -98,7 +98,7 @@ const Sync = (() => {
       // 推的过程中又改了的话，保持 dirty，下轮再推
       setMeta(id, { base: version, dirty: Store.pending(id) || MD.serialize(Store.byId(id) || w) !== text });
       setBaseText(id, text);
-      tally.pushed++; log("push", `上传了 ${id}`, id); return;
+      tally.pushed++; log("push", tr("上传了 {0}", id), id); return;
     }
     if (r.status === 409 && attempt < 2) {
       const { version, text: blob } = await r.json();
@@ -109,23 +109,54 @@ const Sync = (() => {
       let merged;
       try { merged = Merge.weeks(bt ? MD.parse(bt) : null, MD.parse(text), MD.parse(srv)); }
       catch (e) {   // 合并不了：本地内容原样保留、继续标着待推送，不能悄悄换成服务器的
-        const t = `${id} 和服务器上的版本合并失败（${e.message}），本地内容已保留、没有上传，建议先导出这一周备份`;
+        const t = tr("{0} 和服务器上的版本合并失败（{1}），本地内容已保留、没有上传，建议先导出这一周备份", id, e.message);
         log("error", t, id); throw new WeekError(t);
       }
       // 同一条被两边改成不同的字：以这台为准，但要告诉用户另一台的版本被替换了，并把服务器上那一版存成快照
       if (merged.overwritten.length) {
         Snap.keep(id, srv, "server");
-        notes.push(`${id} 有 ${merged.overwritten.length} 条在另一台设备上也改过，已按这台为准，另一台的版本被替换：${merged.overwritten.join("；")}（那一版存在本周的「历史版本」里）`);
-        log("merge", `${id} 两台设备都改过，已合并；同一条两边都改了的，按这台为准，被替换的：${merged.overwritten.join("；")}`, id);
-      } else log("merge", `${id} 两台设备都改过，已合并`, id);
+        notes.push(tr("{0} 有 {1} 条在另一台设备上也改过，已按这台为准，另一台的版本被替换：{2}（那一版存在本周的「历史版本」里）", id, merged.overwritten.length, merged.overwritten.join(tr("；"))));
+        log("merge", tr("{0} 两台设备都改过，已合并；同一条两边都改了的，按这台为准，被替换的：{1}", id, merged.overwritten.join(tr("；"))), id);
+      } else log("merge", tr("{0} 两台设备都改过，已合并", id), id);
       const out = merged.week; out.updated = new Date().toISOString();
       await Store.replace(out, "merge");
       const same = sameContent(srv, MD.serialize(out)) && (E2EE.isEncrypted(blob) || !acct.e2ee);   // 合并后和服务器一样：不用再推
       setMeta(id, { base: version, dirty: !same }); setBaseText(id, srv);
       return same ? undefined : push(id, attempt + 1);
     }
-    if (r.status === 422) throw new Error("服务器拒收明文：这个账号开了加密，请先在下面输入恢复码");
-    throw new Error("推送失败 " + r.status);
+    if (r.status === 422) throw new Error(tr("服务器拒收明文：这个账号开了加密，请先在下面输入恢复码"));
+    throw new Error(tr("推送失败 {0}", r.status));
+  }
+
+  // ---- 图片（见 images.js）：二进制，开了加密的账号传密文 ----
+  const MAGIC = "MYWEEK-E2EE/1 ";
+  const startsWith = (u8, s) => [...s].every((c, i) => u8[i] === c.charCodeAt(0));
+  const imageApi = {
+    async put(key, blob) {
+      let body = new Uint8Array(await blob.arrayBuffer());
+      if (acct.e2ee) body = await E2EE.encryptBytes(body, key);
+      return (await api("/api/images/" + key, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body })).status;
+    },
+    async del(key) { return (await api("/api/images/" + key, { method: "DELETE" })).ok; },
+  };
+  // 别的设备上的图：显示时才下载。服务器上没有返回 null，网络出错抛错（调用方当作「暂时看不到」）
+  async function fetchImage(key) {
+    await E2EE.ready;
+    const r = await api("/api/images/" + key);
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(tr("服务器返回 {0}", r.status));
+    let u8 = new Uint8Array(await r.arrayBuffer());
+    if (startsWith(u8, MAGIC)) u8 = await E2EE.decryptBytes(u8, key);
+    return new Blob([u8], { type: "image/jpeg" });
+  }
+  // 周文件里引用着的全部图片 ID
+  function referencedImages() {
+    const refs = new Set();
+    for (const id of Store.localIds()) {
+      const w = Store.byId(id); if (!w) continue;
+      for (const list of Object.values(w.days)) for (const e of list) (e.img || "").split(",").forEach(x => x && refs.add(x));
+    }
+    return refs;
   }
 
   // 对照服务器上的账号设置，确认这台设备能不能、该不该加密。返回 true 表示刚刚替账号开启了加密。
@@ -134,31 +165,31 @@ const Sync = (() => {
     const r = await api("/api/meta");
     acct = r.ok ? await r.json() : { e2ee: false };   // 旧版服务器没有 /api/meta，就当没开加密
     if (acct.e2ee) {
-      if (!E2EE.enabled) { const e = new Error("这个账号开了端到端加密，请在下面输入恢复码"); e.code = "need-key"; throw e; }
-      if (E2EE.keyId !== acct.keyId) { const e = new Error("这台设备上的密钥和账号对不上，请重新输入恢复码"); e.code = "need-key"; throw e; }
+      if (!E2EE.enabled) { const e = new Error(tr("这个账号开了端到端加密，请在下面输入恢复码")); e.code = "need-key"; throw e; }
+      if (E2EE.keyId !== acct.keyId) { const e = new Error(tr("这台设备上的密钥和账号对不上，请重新输入恢复码")); e.code = "need-key"; throw e; }
       return false;
     }
     if (!E2EE.enabled) return false;
     // 设备上有密钥、账号还没开：替账号开启
     const p = await api("/api/meta", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ e2ee: true, keyId: E2EE.keyId }) });
-    if (p.status === 409) { E2EE.forget(); const e = new Error("这个账号已经用另一把密钥加密了，请输入那把密钥的恢复码"); e.code = "need-key"; throw e; }
-    if (!p.ok) throw new Error("开启加密失败 " + p.status);
+    if (p.status === 409) { E2EE.forget(); const e = new Error(tr("这个账号已经用另一把密钥加密了，请输入那把密钥的恢复码")); e.code = "need-key"; throw e; }
+    if (!p.ok) throw new Error(tr("开启加密失败 {0}", p.status));
     acct = await p.json();
     return true;
   }
 
   // 返回这一轮的结果：{ ok, pulled, pushed, error, notice }
   async function run() {
-    if (!cfg.token) return { ok: false, error: "令牌一栏是空的。如果框里显示了圆点，可能是浏览器自动填的、页面读不到，请删掉重新粘贴" };
-    if (base() === null) return { ok: false, error: "请填上同步服务器的地址（以 https:// 开头）" };
+    if (!cfg.token) return { ok: false, error: tr("令牌一栏是空的。如果框里显示了圆点，可能是浏览器自动填的、页面读不到，请删掉重新粘贴") };
+    if (base() === null) return { ok: false, error: tr("请填上同步服务器的地址（以 https:// 开头）") };
     if (running) { again = true; return { ok: true, busy: true }; }
-    if (!navigator.onLine) { onStatus("离线中，联网后自动同步", "off"); return { ok: false, error: "现在没联网" }; }
+    if (!navigator.onLine) { onStatus(tr("离线中，联网后自动同步"), "off"); return { ok: false, error: tr("现在没联网") }; }
     running = true; clearTimeout(timer); tally = { pulled: 0, pushed: 0 }; notes = [];
     let result, failedWeeks = false;
     try {
       const justEnabled = await checkAccount();
       const r = await api("/api/weeks");
-      if (!r.ok) throw new Error("服务器返回 " + r.status);
+      if (!r.ok) throw new Error(tr("服务器返回 {0}", r.status));
       const remote = new Map((await r.json()).weeks.map(x => [x.week, x.version]));
       // 第一次在这台设备上开同步：本地已有、但从没同步过的周，当作本地改动推上去
       for (const id of Store.localIds()) { const m = meta(id); if (!m.base && !m.dirty) markDirty(id); }
@@ -167,19 +198,24 @@ const Sync = (() => {
         if (!m.dirty && !Store.pending(id) && m.base !== ver) await pull(id);
       }
       // 刚开启加密：服务器上每一周都要换成密文
-      if (justEnabled) { for (const id of new Set([...remote.keys(), ...Store.localIds()])) markDirty(id); notes.push("已开启端到端加密，服务器上的数据都换成了密文"); log("info", "已开启端到端加密，服务器上的数据都换成了密文"); }
+      if (justEnabled) { for (const id of new Set([...remote.keys(), ...Store.localIds()])) markDirty(id); notes.push(tr("已开启端到端加密，服务器上的数据都换成了密文")); log("info", tr("已开启端到端加密，服务器上的数据都换成了密文")); }
       const failed = [];
       for (const id of dirtyIds()) {
         if (Store.pending(id)) continue;
         try { await push(id); } catch (e) { if (e instanceof WeekError) failed.push(e.message); else throw e; }
       }
-      if (failed.length) { failedWeeks = true; throw new Error(failed.join("；")); }   // 每周的错误上面已经记过了
-      const notice = notes.join("；");
+      if (failed.length) { failedWeeks = true; throw new Error(failed.join(tr("；"))); }   // 每周的错误上面已经记过了
+      // 图片：上传新图、删掉用户删的图；都做完且没有待上传的周，才清本机上没人引用的缓存
+      try {
+        notes.push(...await Img.sync(imageApi));
+        if (!dirtyIds().length) await Img.prune(referencedImages());
+      } catch (e) { const t = tr("图片没能同步：{0}", e.message); notes.push(t); log("warn", t); }
+      const notice = notes.join(tr("；"));
       lastOk = new Date(); result = { ok: true, ...tally, notice }; onStatus(notice, notice ? "warn" : "");
     } catch (e) {
-      const msg = e.message === "Failed to fetch" ? "连不上服务器" : e.message;
-      result = { ok: false, error: msg, code: e.code }; onStatus("同步没成功：" + msg, "err");
-      if (!failedWeeks) log("error", "同步没成功：" + msg);
+      const msg = e.message === "Failed to fetch" ? tr("连不上服务器") : e.message;
+      result = { ok: false, error: msg, code: e.code }; onStatus(tr("同步没成功：{0}", msg), "err");
+      if (!failedWeeks) log("error", tr("同步没成功：{0}", msg));
     } finally {
       running = false;
       if (again) { again = false; soon(500); } else soon(30000);
@@ -190,7 +226,7 @@ const Sync = (() => {
   return {
     get cfg() { return { ...cfg }; },
     configure(c) { cfg = { server: (c.server || "").trim(), token: (c.token || "").trim() }; store(CFG, cfg); },
-    enabled, markDirty, soon, run,
+    enabled, markDirty, soon, run, fetchImage,
     get lastOk() { return lastOk; },
     get pendingCount() { return dirtyIds().length; },   // 还没上传到服务器的周数
     get log() { return (load(LOG) || []).slice().reverse(); },   // 新的在前
@@ -200,7 +236,7 @@ const Sync = (() => {
     // 在新设备上输入恢复码。账号已开加密时，先确认指纹对得上再装入
     async useRecoveryCode(code) {
       const id = await E2EE.idOfCode(code);
-      if (acct.e2ee && acct.keyId && id !== acct.keyId) throw new Error("这个恢复码和账号的密钥对不上");
+      if (acct.e2ee && acct.keyId && id !== acct.keyId) throw new Error(tr("这个恢复码和账号的密钥对不上"));
       await E2EE.useCode(code);
     },
     get needsServer() { return IS_APP || !location.protocol.startsWith("http"); },

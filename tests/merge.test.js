@@ -1,7 +1,7 @@
 // 条目合并的测试。运行：node tests/merge.test.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), assert = require("assert");
 const ctx = vm.createContext({ window: {}, console });
-for (const f of ["dates.js", "markdown.js", "merge.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8"), ctx, { filename: f });
+for (const f of ["i18n.js", "i18n-en.js", "dates.js", "markdown.js", "merge.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8"), ctx, { filename: f });
 const run = code => vm.runInContext(code, ctx);
 const MD = run("MD"), Merge = run("Merge");
 

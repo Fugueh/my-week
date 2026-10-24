@@ -32,7 +32,8 @@
 const MD = (() => {
   const H_GOALS = "周目标", H_EVENTS = "这周的事", H_DIARY = "日记", H_REVIEW = "复盘";
 
-  const ID_RE = /\s+\^([A-Za-z0-9-]+)\s*$/;
+  const IMG_RE = /^!\[[^\]]*\]\(img:([A-Za-z0-9-]+)\)$/;
+  const ID_RE =/\s+\^([A-Za-z0-9-]+)\s*$/;
   const safeId = id => String(id).replace(/[^A-Za-z0-9-]/g, "-");
   const tag = it => " ^" + safeId(it.id || hash("x|" + it.text));
   const newId = () => (Math.random().toString(36).slice(2, 8) + "000000").slice(0, 6);
@@ -70,7 +71,8 @@ const MD = (() => {
         let stamp = "";
         if (e.ts != null) { const t = new Date(e.ts); stamp = (dkey(t) === k ? hm(t) : `${md(t)} ${hm(t)}`) + " "; }
         const lines = String(e.text || "").split("\n");
-        lines[lines.length - 1] += tag(e);                         // ID 在条目最后一行末尾
+        String(e.img || "").split(",").filter(Boolean).forEach(id => lines.push(`![](img:${safeId(id)})`));   // 图片：每张一行引用
+        lines[lines.length - 1] += tag(e);                      // ID 在条目最后一行末尾
         out.push(`${ind}- ${stamp}${lines[0]}`);
         lines.slice(1).forEach(l => out.push(`${ind}  ${l}`));      // 多行条目：续行比圆点多缩进两格
       });
@@ -142,7 +144,13 @@ const MD = (() => {
         last = { id: null, wd: sub ?? 0 }; last.text = takeId(b[2], last); w.events.push(last);
       } else if (sec === H_DIARY) {
         if (!sub) continue;
-        if (!b) { if (last) last.text += "\n" + takeId(line.trim(), last); continue; }   // 续行
+        if (!b) {   // 续行：![](img:ID) 是图片引用，其余接在文字后面
+          if (last) {
+            const s = takeId(line.trim(), last), im = s.match(IMG_RE);
+            if (im) last.img = last.img ? last.img + "," + im[1] : im[1]; else last.text += "\n" + s;
+          }
+          continue;
+        }
         const it = { id: null };
         let body = takeId(b[2], it), ts = null;
         const full = body.match(/^(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})\s+(.*)$/);
@@ -150,7 +158,7 @@ const MD = (() => {
         if (full) { const d = resolveMD(start, +full[1], +full[2]); d.setHours(+full[3], +full[4]); ts = d.getTime(); body = full[5]; }
         else if (short && +short[1] < 24) { const d = fromKey(sub); d.setHours(+short[1], +short[2]); ts = d.getTime(); body = short[3] || ""; }
         const list = w.days[sub], prevInd = list.length ? list[list.length - 1].indent : -1;
-        last = { id: it.id, ts, indent: Math.min(indent, prevInd + 1), text: body };
+        last = { id: it.id, ts, indent: Math.min(indent, prevInd + 1), text: body, img: "" };
         list.push(last);
       }
     }

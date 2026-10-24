@@ -66,5 +66,5 @@ const Snap = (() => {
     });
   }
 
-  return { keep, list, label: r => REASON[r] || r, flushed: week => queue.get(week) || Promise.resolve() };
+  return { keep, list, label: r => REASON[r] ? tr(REASON[r]) : r, flushed: week => queue.get(week) || Promise.resolve() };
 })();

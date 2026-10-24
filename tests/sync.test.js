@@ -34,7 +34,7 @@ function device(srv, name, { setTimeout: st = () => 0, fetch: f } = {}) {
     navigator: { onLine: true }, location: { protocol: "https:" }, fetch: f || ((u, o) => srv.fetch(u, o)),
     crypto: nodeCrypto.webcrypto, TextEncoder, TextDecoder, btoa, atob, setTimeout: st, clearTimeout() {}, addEventListener() {},
   });
-  for (const f of ["dates.js", "markdown.js", "merge.js", "crypto.js", "history.js", "store.js", "sync.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8"), ctx, { filename: f });
+  for (const f of ["i18n.js", "i18n-en.js", "dates.js", "markdown.js", "merge.js", "crypto.js", "history.js", "images.js", "store.js", "sync.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8"), ctx, { filename: f });
   const run = c => vm.runInContext(c, ctx);
   run('Sync.configure({ server: "https://srv", token: "t" })');
   return {

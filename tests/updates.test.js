@@ -1,6 +1,6 @@
 // 检查更新的测试：先 GitHub 后 Gitee、只有开了同步才自动查、一天最多一次、版本号比较。运行：node tests/updates.test.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), assert = require("assert");
-const SRC = ["version.js", "updates.js"].map(f => fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8")).join("\n");
+const SRC = ["i18n.js", "i18n-en.js", "version.js", "updates.js"].map(f => fs.readFileSync(path.join(__dirname, "../web/js", f), "utf8")).join("\n");
 
 function open(ls = new Map()) {
   const c = vm.createContext({ window: {}, setTimeout, localStorage: { getItem: k => ls.has(k) ? ls.get(k) : null, setItem: (k, v) => ls.set(k, String(v)) } });
