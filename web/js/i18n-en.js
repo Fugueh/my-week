@@ -64,6 +64,7 @@ const EN = {
   "日记图片": "Diary photo",
   "解码中": "Decoding",
   "没加上": "Failed",
+  "读不了这个文件（{0}），请重新选一次": "Couldn't read this file ({0}); please pick it again",
   "删除这张图片": "Remove this photo",
   "删除这张图片？其他设备和服务器上的这张图也会一起删掉，无法恢复。": "Delete this photo? It will also be deleted from your other devices and the server, and can't be recovered.",
   "图片不在这台设备上": "Photo isn't on this device",

@@ -65,8 +65,10 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
           VERSION_NAME: ${{ github.ref_type == 'tag' && github.ref_name || format('0.0.{0}-dev', github.run_number) }}
         run: |
-          # 版本号 = 运行序号 + 100：本机自己出的测试包用 1–99，永远比 CI 的正式包小，装了测试包也能被正式包覆盖更新（安卓不允许版本号变小）
-          export VERSION_CODE=$((RUN_NUMBER + 100))
+          # 版本号 = 运行序号 × 10 + 100，从第 11 次运行（210）起；之前发出去的 v0.4.0 = 109、v0.4.1 = 110 是旧算法（运行序号 + 100）。
+          # 两次正式发布之间留 9 个空位给本机的测试包：手机上装着正式包 N，本机测试包用 N+1…N+9，下一个正式包一定比它们大。
+          # 安卓不允许版本号变小，所以不能让测试包比下一个正式包大。
+          export VERSION_CODE=$((RUN_NUMBER * 10 + 100))
           if [ -n "$ANDROID_KEYSTORE_FILE" ]; then
             ./gradlew --no-daemon assembleRelease
             cp app/build/outputs/apk/release/app-release.apk ../my-week.apk

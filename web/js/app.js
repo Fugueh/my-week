@@ -539,13 +539,19 @@ $("tPic").onclick = () => { picTarget = tid(); $("picFile").click(); };
 // 选好图后：马上显示调暗的预览和「解码中」，好了换成缩略图。
 // 全局排队，一次只解一张（几张大图同时解会把手机内存撑爆）；失败的不悄悄消失，留一个标着「没加上」的格子，原因放在鼠标提示和状态栏里。
 let decodeChain = Promise.resolve();
-async function addPicked(files, target) {
-  const day = selDay, jobs = files.map(f => ({ f, url: URL.createObjectURL(f), target, day, cancelled: false }));
+// 手机上一次选好几张：只有刚选完这一会儿，每个文件才一定读得到，排在后面的等轮到它解码时往往已经读不了了（一张能上、后面全挂就是这个）。
+// 所以一选完就把所有文件先读进内存，后面都从内存里的副本解码。
+const readNow = f => f.arrayBuffer().then(b => new File([b], f.name, { type: f.type || "image/jpeg" }));
+async function addPicked(files, target, afterRead) {
+  const day = selDay, jobs = files.map(f => ({ f, mem: readNow(f), url: URL.createObjectURL(f), target, day, cancelled: false }));
+  jobs.forEach(j => j.mem.catch(() => {}));   // 没人等的（比如被取消的）读失败了也不要报未处理的错
+  if (afterRead) Promise.allSettled(jobs.map(j => j.mem)).then(afterRead);   // 都读完了，选择框才可以清空
   loading.push(...jobs); const redraw = () => (target == null ? renderPend() : render()); redraw();
   for (const j of jobs) {
     if (!j.cancelled) {
       try {
-        const run = decodeChain.then(() => Img.add(j.f)); decodeChain = run.catch(() => {});
+        const file = await j.mem.catch(e => { throw new Error(tr("读不了这个文件（{0}），请重新选一次", e.message)); });
+        const run = decodeChain.then(() => Img.add(file)); decodeChain = run.catch(() => {});
         const id = await run;
         if (j.cancelled) Img.remove(id);   // 解码中被取消的，刚存下的也删掉
         else {
@@ -569,7 +575,7 @@ document.addEventListener("paste", ev => {
   const row = document.activeElement && document.activeElement.closest ? document.activeElement.closest(".b") : null;
   addPicked(files, row ? row.dataset.id : null);
 });
-$("picFile").onchange = ev => { const files = [...ev.target.files]; ev.target.value = ""; const target = picTarget; picTarget = null; if (files.length) addPicked(files, target); };
+$("picFile").onchange = ev => { const input = ev.target, files = [...input.files], target = picTarget; picTarget = null; if (files.length) addPicked(files, target, () => { input.value = ""; }); };
 // 双击时间戳修改：改成当天的这个钟点（「补」标记随之消失）；清空就是不要时间戳
 function editTime(e, el) {
   const i = document.createElement("input"); i.type = "time"; i.className = "time-in";

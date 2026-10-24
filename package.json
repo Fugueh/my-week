@@ -1,6 +1,6 @@
 {
   "name": "my-week",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "我的一周：周手帐 + 带时间戳的分点日记，一周一个 Markdown 文件",
   "license": "MIT",
