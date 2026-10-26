@@ -1,8 +1,9 @@
 // 按周存储，格式是 Markdown（见 markdown.js）。
 // 总是存进浏览器 localStorage（键 myweek:2026-W42，值是那周的 .md 全文）；
 // 连接了数据文件夹时，同时写成文件夹里的 2026-W42.md（明文，用任何编辑器都能改）。
-// 文件夹有两种实现，方法一样：电脑上的 Chrome / Edge 用 File System Access，
-// 安卓 App 用原生插件 FolderStore（系统的文件夹选择器，授权会一直保留）。
+// 文件夹有三种实现，方法一样：电脑上的 Chrome / Edge 用 File System Access，
+// 安卓 App 用原生插件 FolderStore（系统的文件夹选择器，授权会一直保留），
+// Windows 桌面版直接读写磁盘（desktop/main.js），不用选也会连上默认的「文档\MyWeek」。
 // 你在编辑器里改过的文件，页面会在写入前发现并先读回来，不会覆盖。
 // 本机内容每次被别的东西换掉之前，先交给 Snap（history.js）存一份快照，「历史版本」里能恢复。
 const Store = (() => {
@@ -100,7 +101,7 @@ const Store = (() => {
   /* ---- 数据文件夹 ---- */
   const FolderPlugin = () => window.Capacitor.Plugins.FolderStore;
   const hasAppFolder = IS_APP && !!(window.Capacitor.isPluginAvailable && window.Capacitor.isPluginAvailable("FolderStore"));
-  const canLinkDir = hasAppFolder || (!IS_APP && "showDirectoryPicker" in window);
+  const canLinkDir = IS_DESKTOP || hasAppFolder || (!IS_APP && "showDirectoryPicker" in window);
   // 两种后端，同一组方法：list() → [{name, lastModified}]，read(name) → {text, lastModified} 或 null，
   // stat(name) → lastModified 或 null，write(name, text) → 写完后的 lastModified
   function webFolder(h) {
@@ -125,6 +126,16 @@ const Store = (() => {
       read: async n => { try { return await P.read({ uri, name: n }); } catch (e) { return null; } },
       stat: async n => (await P.stat({ uri, name: n })).lastModified ?? null,
       write: async (n, text) => (await P.write({ uri, name: n, text })).lastModified,
+    };
+  }
+  function desktopFolder({ path, name }) {
+    const D = window.MyWeekDesktop;
+    return {
+      name, path,
+      list: () => D.list(path),
+      read: n => D.read(path, n),
+      stat: n => D.stat(path, n),
+      write: (n, text) => D.write(path, n, text),
     };
   }
   function idb(mode, fn) {
@@ -160,6 +171,13 @@ const Store = (() => {
   }
   async function attach(folder) { dir = folder; const n = await readDir(); onChange(); return n; }
   async function linkDir() {
+    if (IS_DESKTOP) {
+      const r = await window.MyWeekDesktop.pick();
+      if (!r) throw Object.assign(new Error("cancelled"), { name: "AbortError" });
+      seen.clear();
+      try { localStorage.setItem("myweek-folder", JSON.stringify(r)); } catch (e) {}
+      return attach(desktopFolder(r));
+    }
     seen.clear();
     if (hasAppFolder) {
       const r = await FolderPlugin().pick();          // 系统的文件夹选择器
@@ -172,6 +190,12 @@ const Store = (() => {
   }
   async function restoreDir() {
     if (!canLinkDir) return "unsupported";
+    if (IS_DESKTOP) {
+      let saved = null; try { saved = JSON.parse(localStorage.getItem("myweek-folder")); } catch (e) {}
+      if (saved && !(await window.MyWeekDesktop.exists(saved.path))) return "lost";   // 被移走或删了：不偷偷换回默认文件夹，让用户自己选
+      await attach(desktopFolder(saved || await window.MyWeekDesktop.defaultFolder()));
+      return "granted";
+    }
     if (hasAppFolder) {
       let saved = null; try { saved = JSON.parse(localStorage.getItem("myweek-folder")); } catch (e) {}
       if (!saved) return "none";
@@ -228,6 +252,8 @@ const Store = (() => {
   return {
     get, forDay, save, flush, restore, linkDir, restoreDir, regrant, refresh, exportWeek, importFiles, canLinkDir,
     get dirName() { return dir ? dir.name : null; },
+    get dirPath() { return dir && dir.path || null; },             // 只有桌面版知道完整路径
+    openDir: () => window.MyWeekDesktop.open(dir.path),           // 用资源管理器打开数据文件夹（桌面版）
     get queuedCount() { return queued.size; },   // 还在防抖里没写进本机的周数
     hooks(h) {
       onChange = h.onChange || onChange; onStatus = h.onStatus || onStatus;

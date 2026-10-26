@@ -1,0 +1,49 @@
+# 构建 Windows 桌面版（Electron）：安装包 my-week-setup-x.y.z.exe 和免安装压缩包 my-week-x.y.z-win-x64.zip。
+# - 推送 v 开头的标签：构建并附加到这个标签的 GitHub Release（和 android.yml 发的 APK 在同一个 Release 里）
+# - 在 Actions 页面手动运行：构建一次，在这次运行的 Artifacts 里下载
+# 没有代码签名证书，Windows 第一次运行会弹「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」。
+name: Windows Desktop
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖、测试
+        run: |
+          npm ci
+          npm test
+
+      - name: 构建安装包和压缩包
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.exe
+            dist/*.zip
+
+      - name: 发布到 Releases
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/*.zip

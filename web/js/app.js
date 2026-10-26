@@ -256,8 +256,9 @@ function renderWeek() {
   const ex = $("extra"); if (document.activeElement !== ex) ex.value = w.extra || "";
   $("extraSec").hidden = !(w.extra || "").trim() && document.activeElement !== ex;
   $("extraSec").classList.toggle("conflict", /^## 冲突副本/m.test(w.extra || ""));
-  $("storeInfo").textContent = Store.dirName ? tr("数据文件夹：{0}/", Store.dirName) : IS_APP ? tr("只存在这个 App 里（卸载会清掉）") : tr("只存在这个浏览器里");
+  $("storeInfo").textContent = Store.dirPath ? tr("数据文件夹：{0}", Store.dirPath) : Store.dirName ? tr("数据文件夹：{0}/", Store.dirName) : IS_APP ? tr("只存在这个 App 里（卸载会清掉）") : tr("只存在这个浏览器里");
   $("linkDir").hidden = !Store.canLinkDir;
+  $("openDir").hidden = !Store.dirPath;
   if (Store.dirName) $("linkDir").textContent = tr("换一个文件夹");
 }
 // 每天的收起状态：只是这台设备上的显示偏好，存在浏览器里，不进 .md
@@ -712,6 +713,7 @@ $("linkDir").onclick = async () => {
     const n = await Store.linkDir(); status(tr("已连接，读入 {0} 周", n));
   } catch (e) { if (e.name !== "AbortError") status(tr("没连上：{0}", e.message)); }
 };
+$("openDir").onclick = async () => { try { await Store.openDir(); } catch (e) { status(tr("打不开文件夹：{0}", e.message)); } };
 $("exportWk").onclick = async () => { try { await Store.exportWeek(Store.get(dkey(weekStart))); } catch (e) { if (!/cancel/i.test(e.message || "")) status(tr("导出失败：{0}", e.message)); } };
 $("importWk").onclick = () => $("importFile").click();
 $("importFile").onchange = async () => { const n = await Store.importFiles([...$("importFile").files]); status(tr("导入了 {0} 周", n)); $("importFile").value = ""; };
@@ -827,6 +829,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
   showAppUpdate(); setTimeout(autoCheckUpdate, 3000);   // 等第一轮同步先跑
   setTimeout(showWhatsNew, 600);
   Store.restoreDir().then(r => {
+    render();   // 桌面版启动时自动连上数据文件夹，要把路径显示出来
     if (r === "lost") status(tr("之前选的文件夹没有权限了（可能被移动或删除），请重新「连接数据文件夹」"));
     if (r === "prompt") { $("linkDir").textContent = tr("重新连接数据文件夹"); $("linkDir").dataset.regrant = 1; status(tr("点“重新连接数据文件夹”继续写入文件")); }
   }).catch(() => {});

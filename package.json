@@ -3,12 +3,17 @@
   "version": "0.4.2",
   "private": true,
   "description": "我的一周：周手帐 + 带时间戳的分点日记，一周一个 Markdown 文件",
+  "productName": "MyWeek",
+  "author": "Fugueh",
+  "main": "desktop/main.js",
   "license": "MIT",
   "scripts": {
     "sync": "cap sync android",
     "open": "cap open android",
     "test": "node tests/merge.test.js && node tests/sync.test.js && node tests/drafts.test.js && node tests/updates.test.js && node tests/i18n.test.js && node tests/whatsnew.test.js && node tests/images-server.test.js && node tests/sw-version.test.js",
-    "bump-sw": "node tests/sw-version.test.js --fix"
+    "bump-sw": "node tests/sw-version.test.js --fix",
+    "desktop": "electron .",
+    "dist:win": "electron-builder --win --publish never"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
@@ -17,6 +22,48 @@
     "@capacitor/share": "8.0.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.5.2"
+    "@capacitor/cli": "8.5.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.fugueh.myweek",
+    "productName": "MyWeek",
+    "executableName": "my-week",
+    "files": [
+      "desktop/**",
+      "web/**",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "web/icons/icon-512.png",
+      "artifactName": "my-week-${version}-win-x64.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "my-week-setup-${version}.${ext}",
+      "shortcutName": "我的一周"
+    }
   }
 }

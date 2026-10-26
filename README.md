@@ -29,12 +29,19 @@
 | 方式 | 适合 | 数据存在哪 |
 |---|---|---|
 | 安卓 App | 手机上随手记 | 手机里；可以选一个文件夹存 `.md`，也可以连同步服务 |
+| Windows 桌面版 | 电脑上用，数据想直接是文件 | 默认「文档\MyWeek」里的 `.md`，可以换文件夹 |
 | 电脑浏览器打开 `web/index.html` | 电脑上用，不想装东西 | 浏览器里；Chrome / Edge 还能直接读写一个本地文件夹里的 `.md` |
 | 自己部署同步服务 | 手机和电脑都要用 | 你自己的服务器 `data/` 里，各设备自动同步 |
 
 **安卓 App**：到本仓库的 [Releases](../../releases) 下载 `my-week.apk` 安装。建议在周页面底部点「连接数据文件夹」，选一个文件夹（比如 `文档/我的一周`），日记就会存成那里的 `.md` 文件，卸载 App 也不会丢。不选文件夹的话，数据只存在 App 内部，**卸载会清掉**。
 
-**电脑**：下载仓库（Code → Download ZIP），解压后用 Chrome 或 Edge 打开 `web/index.html`。
+**Windows 桌面版**：到 [Releases](../../releases) 下载，二选一：
+- `my-week-setup-x.y.z.exe`：安装包，会建开始菜单和桌面快捷方式，可以选装到哪里。
+- `my-week-x.y.z-win-x64.zip`：免安装，解压后双击 `my-week.exe`。
+
+日记默认存在「文档\MyWeek」，一周一个 `.md`；周页面底部点「在文件管理器中打开」就能看到这些文件，点「换一个文件夹」可以换地方（比如放进网盘同步目录）。卸载不会删掉这些文件。图片和设置存在 App 自己的目录（`%APPDATA%\MyWeek`）。安装包没有代码签名，第一次运行 Windows 可能提示「已保护你的电脑」，点「更多信息 → 仍要运行」。
+
+**电脑浏览器**：下载仓库（Code → Download ZIP），解压后用 Chrome 或 Edge 打开 `web/index.html`。
 
 ## 自己部署同步服务
 
@@ -68,6 +75,12 @@ docker compose up -d --build  # 只监听 127.0.0.1:8000
 每个账号可以在「同步」设置里自己开启端到端加密，开了之后服务器上只有密文，做法见 [docs/FEATURES.md](docs/FEATURES.md#端到端加密)。
 
 更新：拉取新代码后执行 `docker compose up -d --build`。
+
+## 构建 Windows 桌面版
+
+推送 `v` 开头的标签时，GitHub Actions 的「Windows Desktop」会构建安装包和压缩包，附加到同一个 Release；也可以在 Actions 页面手动运行，在 Artifacts 里下载。
+
+本机构建（Windows 上）：`npm ci` 后 `npm run desktop` 直接运行，`npm run dist:win` 打包到 `dist/`。国内网络下载 Electron 慢的话，先设置环境变量 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`。
 
 ## 构建安卓 App
 

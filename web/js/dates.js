@@ -1,5 +1,7 @@
 // 是否运行在安卓 App（Capacitor）里：App 里没有「同一个网址的服务器」，同步要填服务器地址
 const IS_APP = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+// 是否运行在 Windows 桌面版（Electron，desktop/preload.js 提供 MyWeekDesktop）里：数据默认存成「文档\MyWeek」里的 .md
+const IS_DESKTOP = !!window.MyWeekDesktop;
 // 日期工具：周一为一周的第一天，周编号用 ISO 8601（2026-W42）
 const WD = ["一", "二", "三", "四", "五", "六", "日"];
 const pad = n => String(n).padStart(2, "0");
