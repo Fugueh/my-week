@@ -330,8 +330,20 @@ class Handler(BaseHTTPRequestHandler):
             ctype = "application/manifest+json"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/manifest+json"):
             ctype += "; charset=utf-8"
-        # 页面和脚本每次都让浏览器问一下有没有更新；离线时由 service worker 兜底
-        self.send(200, f.read_bytes(), ctype, {"Cache-Control": "no-cache"})
+        size = f.stat().st_size
+        if size <= 1 << 20:
+            # 页面和脚本每次都让浏览器问一下有没有更新；离线时由 service worker 兜底
+            return self.send(200, f.read_bytes(), ctype, {"Cache-Control": "no-cache"})
+        # 大文件（/download/ 里的安装包，Windows 版有一百多 MB）：边读边发，不整个读进内存
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(size))
+        self.send_header("Cache-Control", "no-cache")
+        self.cors()
+        self.end_headers()
+        if self.command != "HEAD":
+            with f.open("rb") as src:
+                shutil.copyfileobj(src, self.wfile, 1 << 20)
 
 
 def drop_root():
